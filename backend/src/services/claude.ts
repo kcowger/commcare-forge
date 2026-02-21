@@ -60,18 +60,28 @@ export class ClaudeService {
     return fullText
   }
 
-  async sendOneShot(systemPrompt: string, message: string): Promise<string> {
-    const response = await this.client.messages.create({
+  async sendOneShot(
+    systemPrompt: string,
+    message: string,
+    onChunk?: (chunk: string) => void
+  ): Promise<string> {
+    const stream = this.client.messages.stream({
       model: 'claude-sonnet-4-5-20250929',
       max_tokens: 16384,
       system: systemPrompt,
       messages: [{ role: 'user', content: message }]
     })
 
-    return response.content
-      .filter((block): block is Anthropic.TextBlock => block.type === 'text')
-      .map(block => block.text)
-      .join('')
+    let fullText = ''
+
+    stream.on('text', (text) => {
+      fullText += text
+      if (onChunk) onChunk(text)
+    })
+
+    await stream.finalMessage()
+
+    return fullText
   }
 
   getConversationSummary(): string {

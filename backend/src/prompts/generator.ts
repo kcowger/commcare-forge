@@ -1,42 +1,32 @@
-export const GENERATOR_PROMPT = `You are generating a complete CommCare application as a .ccz file structure. Based on the conversation and confirmed app specification, output the complete set of files needed.
+export const GENERATOR_PROMPT = `You generate CommCare application files. You MUST output a single JSON object inside a \`\`\`json code block.
 
-A .ccz file is a ZIP containing:
-- profile.xml — App profile and settings
-- suite.xml — Module/form structure, menus, case list config
-- media_suite.xml — Media references (can be empty/minimal)
-- modules-{N}/forms-{N}.xml — XForm files for each form in each module
+CRITICAL: Your entire response must be ONLY the JSON code block. No explanation before or after. No markdown headings. Just the code block.
 
-Output your response as a JSON object where:
-- Keys are file paths (e.g. "profile.xml", "suite.xml", "modules-0/forms-0.xml")
-- Values are the complete XML content for each file
+The JSON object maps file paths to their XML content:
 
-The JSON must be valid and parseable. Wrap it in a code block with the language tag "json".
+\`\`\`json
+{
+  "profile.xml": "<?xml version=\\"1.0\\"?>\\n<profile ...>...</profile>",
+  "suite.xml": "<?xml version=\\"1.0\\"?>\\n<suite ...>...</suite>",
+  "media_suite.xml": "<?xml version=\\"1.0\\"?>\\n<suite .../>",
+  "modules-0/forms-0.xml": "<?xml version=\\"1.0\\"?>\\n<html xmlns=\\"http://www.w3.org/1999/xhtml\\" ...>...</html>"
+}
+\`\`\`
 
-Requirements for the generated XML:
+File structure of a .ccz:
+- profile.xml — App profile with name, version, resource references
+- suite.xml — Menus, entries, datums, detail definitions
+- media_suite.xml — Media references (can be minimal/empty)
+- modules-{N}/forms-{N}.xml — XForm files
 
-**profile.xml:**
-- Must include app name, version, and required features
-- Reference all form and suite resources
+XForm conventions:
+- Root element: <html xmlns="http://www.w3.org/1999/xhtml" xmlns:h="http://www.w3.org/1999/xhtml">
+- XForms namespace: xmlns="http://www.w3.org/2002/xforms"
+- CommCare case namespace for case operations
+- <head> contains <title> and <model> with <instance>, <bind> elements
+- <body> contains question widgets: <input>, <select1>, <select>
+- Each question needs ref, <label>, and corresponding <bind> with type/relevance/constraint
 
-**suite.xml:**
-- Define menus for each module
-- Define entries (command, datum, session) for each form
-- Define detail elements for case lists and case details
-- Include proper assertions and locale references
+All IDs must be consistent between suite.xml and form files.
 
-**XForm files (modules-N/forms-N.xml):**
-- Valid XForms 1.0 with CommCare extensions
-- Proper data model with all fields
-- Correct bindings with data types, relevance conditions, constraints, and calculations
-- Proper case blocks for create/update/close operations
-- Appropriate question types (input, select1, select)
-- Labels for all questions
-
-Follow CommCare XForm conventions:
-- Namespace: xmlns="http://www.w3.org/2002/xforms"
-- CommCare namespace: xmlns:cc="http://commcarehq.org/xforms"
-- Data namespace should use a unique xmlns for the form
-- Use jr:// protocol for resources
-- Case operations use the case XML block format
-
-Ensure all cross-references between suite.xml and form files are consistent (form IDs, menu IDs, datum IDs must match).`
+Output ONLY the JSON code block. Nothing else.`
