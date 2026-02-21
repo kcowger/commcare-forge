@@ -1,5 +1,6 @@
 import { IpcMain, BrowserWindow } from 'electron'
 import { ClaudeService } from '@backend/services/claude'
+import { AppGenerator } from '@backend/services/appGenerator'
 import type { FileAttachment, AppSettings } from './preload'
 import Store from 'electron-store'
 
@@ -56,13 +57,39 @@ export function registerIpcHandlers(ipcMain: IpcMain) {
     }
   })
 
+  ipcMain.handle('app:generate', async (event) => {
+    try {
+      const service = getClaudeService()
+      const window = BrowserWindow.fromWebContents(event.sender)
+      const maxRetries = store.get('maxValidationRetries') || 5
+
+      const generator = new AppGenerator(service, maxRetries)
+      const conversationContext = service.getConversationSummary()
+
+      const result = await generator.generate(conversationContext, (progress) => {
+        if (window && !window.isDestroyed()) {
+          window.webContents.send('app:generation-progress', progress)
+        }
+      })
+
+      return {
+        success: result.success,
+        cczPath: result.cczPath,
+        exportPath: result.exportPath,
+        errors: result.errors
+      }
+    } catch (error: any) {
+      throw new Error(error.message || 'Failed to generate app')
+    }
+  })
+
   ipcMain.handle('settings:get-api-key', async () => {
     return store.get('apiKey') || null
   })
 
   ipcMain.handle('settings:set-api-key', async (_event, key: string) => {
     store.set('apiKey', key)
-    claudeService = null // Reset so next call creates a new service with the new key
+    claudeService = null
   })
 
   ipcMain.handle('settings:get', async () => {

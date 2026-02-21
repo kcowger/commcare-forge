@@ -21,6 +21,20 @@ export interface AppSettings {
   maxValidationRetries: number
 }
 
+export interface GenerationProgress {
+  status: 'generating' | 'validating' | 'fixing' | 'success' | 'failed'
+  message: string
+  attempt: number
+  maxAttempts: number
+}
+
+export interface GenerationResult {
+  success: boolean
+  cczPath?: string
+  exportPath?: string
+  errors?: string[]
+}
+
 export interface ElectronAPI {
   sendMessage: (message: string, attachments?: FileAttachment[]) => Promise<string>
   streamMessage: (message: string, attachments?: FileAttachment[]) => Promise<string>
@@ -29,6 +43,8 @@ export interface ElectronAPI {
   getSettings: () => Promise<AppSettings>
   setSettings: (settings: Partial<AppSettings>) => Promise<void>
   onStreamChunk: (callback: (chunk: string) => void) => () => void
+  generateApp: () => Promise<GenerationResult>
+  onGenerationProgress: (callback: (progress: GenerationProgress) => void) => () => void
 }
 
 declare global {

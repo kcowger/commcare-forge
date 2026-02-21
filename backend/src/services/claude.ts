@@ -60,6 +60,26 @@ export class ClaudeService {
     return fullText
   }
 
+  async sendOneShot(systemPrompt: string, message: string): Promise<string> {
+    const response = await this.client.messages.create({
+      model: 'claude-sonnet-4-5-20250929',
+      max_tokens: 16384,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: message }]
+    })
+
+    return response.content
+      .filter((block): block is Anthropic.TextBlock => block.type === 'text')
+      .map(block => block.text)
+      .join('')
+  }
+
+  getConversationSummary(): string {
+    return this.conversationHistory
+      .map(msg => `${msg.role === 'user' ? 'User' : 'Assistant'}: ${typeof msg.content === 'string' ? msg.content : '[complex content]'}`)
+      .join('\n\n')
+  }
+
   resetConversation(): void {
     this.conversationHistory = []
   }

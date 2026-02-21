@@ -1,15 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
-export type ElectronAPI = {
-  sendMessage: (message: string, attachments?: FileAttachment[]) => Promise<string>
-  streamMessage: (message: string, attachments?: FileAttachment[], onChunk?: (chunk: string) => void) => Promise<string>
-  getApiKey: () => Promise<string | null>
-  setApiKey: (key: string) => Promise<void>
-  getSettings: () => Promise<AppSettings>
-  setSettings: (settings: Partial<AppSettings>) => Promise<void>
-  onStreamChunk: (callback: (chunk: string) => void) => () => void
-}
-
 export interface FileAttachment {
   name: string
   type: string
@@ -22,6 +12,32 @@ export interface AppSettings {
   hqServer: string
   hqDomain: string
   maxValidationRetries: number
+}
+
+export interface GenerationProgress {
+  status: 'generating' | 'validating' | 'fixing' | 'success' | 'failed'
+  message: string
+  attempt: number
+  maxAttempts: number
+}
+
+export interface GenerationResult {
+  success: boolean
+  cczPath?: string
+  exportPath?: string
+  errors?: string[]
+}
+
+export type ElectronAPI = {
+  sendMessage: (message: string, attachments?: FileAttachment[]) => Promise<string>
+  streamMessage: (message: string, attachments?: FileAttachment[]) => Promise<string>
+  getApiKey: () => Promise<string | null>
+  setApiKey: (key: string) => Promise<void>
+  getSettings: () => Promise<AppSettings>
+  setSettings: (settings: Partial<AppSettings>) => Promise<void>
+  onStreamChunk: (callback: (chunk: string) => void) => () => void
+  generateApp: () => Promise<GenerationResult>
+  onGenerationProgress: (callback: (progress: GenerationProgress) => void) => () => void
 }
 
 const api: ElectronAPI = {
@@ -47,6 +63,14 @@ const api: ElectronAPI = {
     const handler = (_event: Electron.IpcRendererEvent, chunk: string) => callback(chunk)
     ipcRenderer.on('chat:stream-chunk', handler)
     return () => ipcRenderer.removeListener('chat:stream-chunk', handler)
+  },
+  generateApp: () => {
+    return ipcRenderer.invoke('app:generate')
+  },
+  onGenerationProgress: (callback: (progress: GenerationProgress) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, progress: GenerationProgress) => callback(progress)
+    ipcRenderer.on('app:generation-progress', handler)
+    return () => ipcRenderer.removeListener('app:generation-progress', handler)
   }
 }
 
