@@ -19,6 +19,7 @@ export interface GenerationProgress {
   message: string
   attempt: number
   maxAttempts: number
+  filesDetected?: string[]
 }
 
 export interface GenerationResult {

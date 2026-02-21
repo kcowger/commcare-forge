@@ -25,21 +25,29 @@ export class AppGenerator {
     conversationContext: string,
     onProgress?: (progress: GenerationProgress) => void
   ): Promise<{ success: boolean; appDefinition?: AppDefinition; cczPath?: string; exportPath?: string; errors?: string[] }> {
-    const report = (status: GenerationProgress['status'], message: string, attempt: number) => {
+    const report = (status: GenerationProgress['status'], message: string, attempt: number, filesDetected?: string[]) => {
       if (onProgress) {
-        onProgress({ status, message, attempt, maxAttempts: this.maxRetries })
+        onProgress({ status, message, attempt, maxAttempts: this.maxRetries, filesDetected })
       }
     }
 
-    // Step 1: Generate with streaming progress
-    let charCount = 0
+    // Step 1: Generate with streaming progress and file detection
+    let streamBuffer = ''
+    const filesDetected: string[] = []
     report('generating', 'Generating app definition...', 0)
 
     const message = `Here is the full conversation with the user about the app they want:\n\n${conversationContext}\n\nBased on this conversation, generate the complete CommCare app files.`
-    const response = await this.claudeService.sendOneShot(GENERATOR_PROMPT, message, () => {
-      charCount++
-      if (charCount % 200 === 0) {
-        report('generating', `Generating app definition... (${Math.round(charCount / 1000)}k chars received)`, 0)
+    const response = await this.claudeService.sendOneShot(GENERATOR_PROMPT, message, (chunk) => {
+      streamBuffer += chunk
+      // Detect file names as they appear in the JSON stream (e.g. "profile.xml":)
+      const filePattern = /"([^"]+\.xml)":/g
+      let match
+      while ((match = filePattern.exec(streamBuffer)) !== null) {
+        const fileName = match[1]
+        if (!filesDetected.includes(fileName)) {
+          filesDetected.push(fileName)
+          report('generating', `Generating ${fileName}...`, 0, filesDetected)
+        }
       }
     })
 
