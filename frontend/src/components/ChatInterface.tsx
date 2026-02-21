@@ -120,9 +120,9 @@ export default function ChatInterface({ messages, isLoading, onSendMessage }: Ch
             </div>
           </div>
         ) : (
-          <div className="max-w-3xl mx-auto px-6 py-6 space-y-6">
-            {messages.map(msg => (
-              <MessageBubble key={msg.id} message={msg} />
+          <div className="max-w-3xl mx-auto px-6 py-6 space-y-4">
+            {messages.map((msg, i) => (
+              <MessageBubble key={msg.id} message={msg} animate={i >= messages.length - 2} />
             ))}
             <div ref={messagesEndRef} />
           </div>
@@ -201,15 +201,29 @@ export default function ChatInterface({ messages, isLoading, onSendMessage }: Ch
   )
 }
 
-function MessageBubble({ message }: { message: ChatMessage }) {
+function MessageBubble({ message, animate }: { message: ChatMessage; animate: boolean }) {
   const isUser = message.role === 'user'
 
   return (
-    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
+    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} ${animate ? 'animate-fade-in' : ''}`}>
       <div className={`max-w-[85%] ${isUser ? 'order-2' : ''}`}>
+        {/* Role label */}
+        <div className={`flex items-center gap-1.5 mb-1 ${isUser ? 'justify-end' : ''}`}>
+          {!isUser && (
+            <div className="w-4 h-4 rounded bg-accent/20 flex items-center justify-center">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-accent">
+                <path d="M12 2L2 7l10 5 10-5-10-5z" />
+              </svg>
+            </div>
+          )}
+          <span className="text-[11px] font-medium text-white/30">
+            {isUser ? 'You' : 'CommCare Forge'}
+          </span>
+        </div>
+
         {/* Attachments */}
         {message.attachments && message.attachments.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 mb-2">
+          <div className="flex flex-wrap gap-1.5 mb-1.5">
             {message.attachments.map((att, i) => (
               <span key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white/5 text-xs text-white/50">
                 <FileIcon type={att.type} />
@@ -218,15 +232,17 @@ function MessageBubble({ message }: { message: ChatMessage }) {
             ))}
           </div>
         )}
-        <div className={`rounded-2xl px-4 py-3 text-sm leading-relaxed ${
+
+        {/* Message content */}
+        <div className={`rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
           isUser
-            ? 'bg-accent text-white rounded-br-md'
-            : 'bg-white/5 text-white/90 rounded-bl-md border border-white/5'
+            ? 'bg-accent text-white rounded-tr-md'
+            : 'bg-white/[0.03] text-white/90 rounded-tl-md border border-white/[0.06]'
         }`}>
           {isUser ? (
             <p className="whitespace-pre-wrap">{message.content}</p>
           ) : (
-            <div className="prose prose-invert prose-sm max-w-none prose-p:my-2 prose-headings:my-3 prose-ul:my-2 prose-ol:my-2 prose-li:my-0.5">
+            <div className="cc-markdown">
               <ReactMarkdown>{message.content || (message.isStreaming ? '...' : '')}</ReactMarkdown>
             </div>
           )}
@@ -264,7 +280,6 @@ function fileToBase64(file: File): Promise<string> {
     const reader = new FileReader()
     reader.onload = () => {
       const result = reader.result as string
-      // Remove the data URL prefix (e.g. "data:image/png;base64,")
       const base64 = result.split(',')[1] || result
       resolve(base64)
     }

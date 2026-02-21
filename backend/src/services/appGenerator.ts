@@ -112,7 +112,7 @@ export class AppGenerator {
       }
 
       // Fix attempt with streaming
-      charCount = 0
+      let charCount = 0
       report('fixing', `Found ${result.errors.length} issue(s), fixing...`, attempt)
 
       const filesStr = Object.entries(files)
