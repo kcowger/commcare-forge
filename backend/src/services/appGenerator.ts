@@ -55,12 +55,21 @@ export class AppGenerator {
 
       const result = await this.cliValidator.validate(cczPath)
 
+      if (result.skipped) {
+        const msg = `App generated (validation skipped: ${result.skipReason || 'CLI not available'})`
+        report('success', msg, attempt)
+        const exportPath = await this.appExporter.exportCcz(cczPath, appName)
+        return {
+          success: true,
+          appDefinition: { name: appName, files },
+          cczPath: exportPath,
+          exportPath
+        }
+      }
+
       if (result.success) {
         report('success', 'App validated successfully!', attempt)
-
-        // Save exports
         const exportPath = await this.appExporter.exportCcz(cczPath, appName)
-
         return {
           success: true,
           appDefinition: { name: appName, files },

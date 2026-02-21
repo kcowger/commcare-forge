@@ -19,6 +19,8 @@ export interface AppDefinition {
 
 export interface ValidationResult {
   success: boolean
+  skipped: boolean
+  skipReason?: string
   errors: string[]
   stdout: string
   stderr: string

@@ -13,12 +13,13 @@ export class CliValidator {
   }
 
   async validate(cczPath: string): Promise<ValidationResult> {
-    // Check if JAR exists
     if (!existsSync(this.jarPath)) {
       return {
-        success: true, // Skip validation if CLI not available
+        success: true,
+        skipped: true,
+        skipReason: 'commcare-cli.jar not found. Install Java 17+ and run: npm run download-cli',
         errors: [],
-        stdout: '[CLI validation skipped: commcare-cli.jar not found]',
+        stdout: '',
         stderr: ''
       }
     }
@@ -44,6 +45,7 @@ export class CliValidator {
         const errors = this.parseErrors(stdout, stderr)
         resolve({
           success: errors.length === 0 && code === 0,
+          skipped: false,
           errors,
           stdout,
           stderr
@@ -51,17 +53,19 @@ export class CliValidator {
       })
 
       proc.on('error', (err) => {
-        // If Java is not installed, skip validation
         if (err.message.includes('ENOENT') || err.message.includes('not found')) {
           resolve({
             success: true,
+            skipped: true,
+            skipReason: 'Java not found. Install Java 17+ to enable validation.',
             errors: [],
-            stdout: '[CLI validation skipped: Java not found]',
+            stdout: '',
             stderr: ''
           })
         } else {
           resolve({
             success: false,
+            skipped: false,
             errors: [`Failed to run CLI: ${err.message}`],
             stdout,
             stderr
@@ -80,10 +84,9 @@ export class CliValidator {
       const trimmed = line.trim()
       if (!trimmed) continue
 
-      // Match explicit error/exception lines
       if (/\b(error|exception|fatal)\b/i.test(trimmed) &&
-          !/^at\s/.test(trimmed) && // skip stack trace lines
-          !/^\d/.test(trimmed)) {   // skip numbered lines
+          !/^at\s/.test(trimmed) &&
+          !/^\d/.test(trimmed)) {
         errors.push(trimmed)
       }
     }
