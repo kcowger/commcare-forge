@@ -1,0 +1,44 @@
+appId: org.commcareforge.app
+productName: CommCare Forge
+copyright: Copyright (c) 2024 CommCare Forge Contributors
+
+directories:
+  output: build/output
+  buildResources: build/resources
+
+files:
+  - out/**/*
+  - backend/lib/**/*
+  - package.json
+
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+      arch:
+        - universal
+  darkModeSupport: true
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  artifactName: ${name}-${version}-setup.${ext}
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+
+linux:
+  target:
+    - target: AppImage
+      arch:
+        - x64
+  category: Development
+
+extraResources:
+  - from: backend/lib/
+    to: lib/
+    filter:
+      - "**/*"

@@ -1,0 +1,48 @@
+{
+  "name": "commcare-forge",
+  "version": "0.1.0",
+  "description": "AI-powered desktop app for generating CommCare applications from natural language or uploaded documents",
+  "type": "module",
+  "main": "out/main/main.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "dist": "electron-vite build && electron-builder",
+    "dist:win": "electron-vite build && electron-builder --win",
+    "dist:mac": "electron-vite build && electron-builder --mac",
+    "dist:linux": "electron-vite build && electron-builder --linux",
+    "download-cli": "bash scripts/download-cli.sh",
+    "test:integration": "echo 'Integration tests require Java 17+'"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "archiver": "^7.0.1",
+    "electron-store": "^8.2.0",
+    "mammoth": "^1.8.0",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/archiver": "^6.0.3",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
+    "electron-vite": "^2.3.0",
+    "postcss": "^8.4.49",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-markdown": "^9.0.1",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.7.2",
+    "vite": "^5.4.11"
+  },
+  "author": "Kai Cowger",
+  "license": "BSD-3-Clause",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kcowger/commcare-forge.git"
+  }
+}

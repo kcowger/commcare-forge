@@ -1,0 +1,23 @@
+node_modules/
+dist/
+dist-electron/
+dist-renderer/
+out/
+.env
+*.local
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+
+# Backend lib (downloaded at build time)
+backend/lib/commcare-cli.jar
+
+# Build output
+build/output/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
