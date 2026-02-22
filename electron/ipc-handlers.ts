@@ -1,5 +1,6 @@
 import { IpcMain, BrowserWindow, dialog, shell } from 'electron'
-import { autoUpdater } from 'electron-updater'
+import electronUpdater from 'electron-updater'
+const { autoUpdater } = electronUpdater
 import { ClaudeService } from '@backend/services/claude'
 import { AppGenerator } from '@backend/services/appGenerator'
 import { CliValidator } from '@backend/services/cliValidator'

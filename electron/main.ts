@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
-import { autoUpdater } from 'electron-updater'
+import electronUpdater from 'electron-updater'
+const { autoUpdater } = electronUpdater
 import { registerIpcHandlers } from './ipc-handlers'
 
 let mainWindow: BrowserWindow | null = null
