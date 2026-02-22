@@ -6,9 +6,10 @@ interface ChatInterfaceProps {
   messages: ChatMessage[]
   isLoading: boolean
   onSendMessage: (content: string, attachments?: FileAttachment[]) => void
+  onUploadExisting?: () => void
 }
 
-export default function ChatInterface({ messages, isLoading, onSendMessage }: ChatInterfaceProps) {
+export default function ChatInterface({ messages, isLoading, onSendMessage, onUploadExisting }: ChatInterfaceProps) {
   const [input, setInput] = useState('')
   const [attachments, setAttachments] = useState<FileAttachment[]>([])
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -118,6 +119,26 @@ export default function ChatInterface({ messages, isLoading, onSendMessage }: Ch
                 WASH survey
               </SuggestionChip>
             </div>
+            {onUploadExisting && (
+              <>
+                <div className="flex items-center gap-3 mt-6">
+                  <div className="h-px flex-1 bg-white/10" />
+                  <span className="text-xs text-white/30">or</span>
+                  <div className="h-px flex-1 bg-white/10" />
+                </div>
+                <button
+                  onClick={onUploadExisting}
+                  className="mt-4 flex items-center gap-2 px-4 py-2 rounded-full border border-white/10 text-sm text-white/40 hover:text-white/70 hover:border-white/20 hover:bg-white/5 transition-all"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+                    <polyline points="17 8 12 3 7 8" />
+                    <line x1="12" y1="3" x2="12" y2="15" />
+                  </svg>
+                  Upload existing app
+                </button>
+              </>
+            )}
           </div>
         ) : (
           <div className="max-w-3xl mx-auto px-6 py-6 space-y-4">

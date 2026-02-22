@@ -9,9 +9,10 @@ out/
 npm-debug.log*
 .DS_Store
 Thumbs.db
+NUL
 
-# Backend lib (downloaded at build time)
-backend/lib/commcare-cli.jar
+# CommCare CLI jar (downloaded separately)
+lib/commcare-cli.jar
 
 # Build output
 build/output/
@@ -21,3 +22,10 @@ build/output/
 .idea/
 *.swp
 *.swo
+
+# Claude Code local config
+.claude/
+
+# Internal reference docs (not part of the app)
+COMMCARE_HQ_VALIDATION_RULES.md
+COMMCARE_FORGE_SPEC.md

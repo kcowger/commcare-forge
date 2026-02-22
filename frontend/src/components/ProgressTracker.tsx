@@ -4,11 +4,10 @@ interface ProgressTrackerProps {
   status: 'generating' | 'validating' | 'fixing' | 'success' | 'failed'
   message: string
   attempt: number
-  maxAttempts: number
   filesDetected?: string[]
 }
 
-export default function ProgressTracker({ status, message, attempt, maxAttempts, filesDetected }: ProgressTrackerProps) {
+export default function ProgressTracker({ status, message, attempt, filesDetected }: ProgressTrackerProps) {
   const isActive = status !== 'success' && status !== 'failed'
   const isSuccess = status === 'success'
   const isFailed = status === 'failed'
@@ -103,8 +102,11 @@ export default function ProgressTracker({ status, message, attempt, maxAttempts,
             <line x1="9" y1="9" x2="15" y2="15" />
           </svg>
         )}
-        <span className={`text-xs ${isSuccess ? 'text-accent' : isFailed ? 'text-red-400' : 'text-white/70'}`}>
+        <span className={`text-xs ${isSuccess ? 'text-accent' : isFailed ? 'text-red-400' : 'text-white/70'} break-words`}>
           {message}
+          {(status === 'validating' || status === 'fixing') && attempt > 0 && (
+            <span className="text-white/30 ml-2">(attempt {attempt})</span>
+          )}
         </span>
       </div>
 

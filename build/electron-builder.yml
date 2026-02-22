@@ -1,6 +1,6 @@
 appId: org.commcareforge.app
 productName: CommCare Forge
-copyright: Copyright (c) 2024 CommCare Forge Contributors
+copyright: Copyright (c) 2025 CommCare Forge Contributors
 
 directories:
   output: build/output
@@ -8,7 +8,6 @@ directories:
 
 files:
   - out/**/*
-  - backend/lib/**/*
   - package.json
 
 mac:
@@ -36,9 +35,3 @@ linux:
       arch:
         - x64
   category: Development
-
-extraResources:
-  - from: backend/lib/
-    to: lib/
-    filter:
-      - "**/*"

@@ -14,7 +14,7 @@ export class CczBuilder {
 
     return new Promise((resolve, reject) => {
       const output = createWriteStream(cczPath)
-      const archive = archiver('zip', { zlib: { level: 9 } })
+      const archive = archiver('zip', { zlib: { level: 0 } })
 
       output.on('close', () => resolve(cczPath))
       archive.on('error', (err) => reject(err))

@@ -3,7 +3,7 @@
 # Requires: Java 17+, Git
 set -e
 
-OUTPUT_DIR="backend/lib"
+OUTPUT_DIR="lib"
 OUTPUT_FILE="$OUTPUT_DIR/commcare-cli.jar"
 CLONE_DIR=$(mktemp -d)
 

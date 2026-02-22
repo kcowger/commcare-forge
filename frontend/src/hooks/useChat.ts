@@ -109,5 +109,25 @@ export function useChat() {
     setIsSpecStreaming(false)
   }, [])
 
-  return { messages, isLoading, sendMessage, clearMessages, architectureSpec, isSpecStreaming }
+  const injectMessages = useCallback((userContent: string, assistantContent: string) => {
+    const userMsg: ChatMessage = {
+      id: crypto.randomUUID(),
+      role: 'user',
+      content: userContent,
+      timestamp: Date.now()
+    }
+    const assistantMsg: ChatMessage = {
+      id: crypto.randomUUID(),
+      role: 'assistant',
+      content: assistantContent,
+      timestamp: Date.now()
+    }
+    setMessages(prev => [...prev, userMsg, assistantMsg])
+  }, [])
+
+  const setSpec = useCallback((spec: string | null) => {
+    setArchitectureSpec(spec)
+  }, [])
+
+  return { messages, isLoading, sendMessage, clearMessages, architectureSpec, isSpecStreaming, injectMessages, setSpec }
 }

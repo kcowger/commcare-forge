@@ -6,9 +6,12 @@ interface ArchitecturePanelProps {
   isStreaming: boolean
   canBuild: boolean
   onBuild: () => void
+  mode: 'chat' | 'uploaded'
+  onValidate?: () => void
+  isValidating?: boolean
 }
 
-export default function ArchitecturePanel({ content, isStreaming, canBuild, onBuild }: ArchitecturePanelProps) {
+export default function ArchitecturePanel({ content, isStreaming, canBuild, onBuild, mode, onValidate, isValidating }: ArchitecturePanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
 
   // Auto-scroll while streaming
@@ -48,15 +51,25 @@ export default function ArchitecturePanel({ content, isStreaming, canBuild, onBu
         )}
       </div>
 
-      {/* Build button */}
+      {/* Action button */}
       {canBuild && !isStreaming && (
         <div className="px-5 py-3 border-t border-white/10 shrink-0">
-          <button
-            onClick={onBuild}
-            className="w-full py-2.5 rounded-xl bg-accent hover:bg-accent-light text-white font-medium text-sm transition-colors"
-          >
-            Build App
-          </button>
+          {mode === 'uploaded' ? (
+            <button
+              onClick={onValidate}
+              disabled={isValidating}
+              className="w-full py-2.5 rounded-xl bg-accent hover:bg-accent-light text-white font-medium text-sm transition-colors disabled:opacity-50"
+            >
+              {isValidating ? 'Validating...' : 'Validate App'}
+            </button>
+          ) : (
+            <button
+              onClick={onBuild}
+              className="w-full py-2.5 rounded-xl bg-accent hover:bg-accent-light text-white font-medium text-sm transition-colors"
+            >
+              Build App
+            </button>
+          )}
         </div>
       )}
     </div>

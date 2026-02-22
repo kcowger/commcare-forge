@@ -30,7 +30,6 @@ export interface GenerationProgress {
   status: 'generating' | 'validating' | 'fixing' | 'success' | 'failed'
   message: string
   attempt: number
-  maxAttempts: number
   filesDetected?: string[]
 }
 
@@ -38,5 +37,4 @@ export interface AppSettings {
   apiKey: string | null
   hqServer: string
   hqDomain: string
-  maxValidationRetries: number
 }
