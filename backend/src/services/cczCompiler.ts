@@ -1,5 +1,5 @@
-import archiver from 'archiver'
-import { createWriteStream, mkdirSync } from 'fs'
+import AdmZip from 'adm-zip'
+import { mkdirSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { randomUUID } from 'crypto'
@@ -226,21 +226,13 @@ export class CczCompiler {
     const cczFileName = `${(appName || 'app').replace(/[^a-zA-Z0-9-_]/g, '_')}.ccz`
     const cczPath = join(outputDir, cczFileName)
 
-    return new Promise((resolve, reject) => {
-      const output = createWriteStream(cczPath)
-      const archive = archiver('zip', { zlib: { level: 0 } })
+    const zip = new AdmZip()
+    for (const [filePath, content] of Object.entries(files)) {
+      zip.addFile(filePath, Buffer.from(content, 'utf-8'))
+    }
+    zip.writeZip(cczPath)
 
-      output.on('close', () => resolve(cczPath))
-      archive.on('error', (err) => reject(err))
-
-      archive.pipe(output)
-
-      for (const [filePath, content] of Object.entries(files)) {
-        archive.append(content, { name: filePath })
-      }
-
-      archive.finalize()
-    })
+    return cczPath
   }
 
   private escapeXml(s: string): string {
