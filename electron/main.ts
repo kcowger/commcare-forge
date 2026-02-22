@@ -13,7 +13,9 @@ function createWindow() {
     minWidth: 800,
     minHeight: 600,
     title: 'CommCare Forge',
-    icon: join(__dirname, '../../build/resources/icon.png'),
+    icon: app.isPackaged
+      ? join(process.resourcesPath, 'icon.png')
+      : join(__dirname, '../../build/resources/icon.png'),
     webPreferences: {
       preload: join(__dirname, '../preload/preload.mjs'),
       contextIsolation: true,

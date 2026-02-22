@@ -11,6 +11,10 @@ directories:
   output: dist
   buildResources: build/resources
 
+extraResources:
+  - from: build/resources/icon.png
+    to: icon.png
+
 files:
   - out/**/*
   - package.json

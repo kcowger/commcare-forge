@@ -384,6 +384,14 @@ export default function App() {
     }
   }, [generationResult])
 
+  const handleSendMessage = useCallback(async (content: string, attachments?: FileAttachment[]) => {
+    if (generationResult) {
+      setGenerationResult(null)
+      setGenerationProgress(null)
+    }
+    return sendMessage(content, attachments)
+  }, [sendMessage, generationResult])
+
   const canGenerate = messages.length >= 2 && !isLoading && !isGenerating
   const hasPanel = !!architectureSpec
 
@@ -483,7 +491,7 @@ export default function App() {
             <ChatInterface
               messages={messages}
               isLoading={isLoading}
-              onSendMessage={sendMessage}
+              onSendMessage={handleSendMessage}
               onUploadExisting={handleUploadExisting}
             />
           </div>
