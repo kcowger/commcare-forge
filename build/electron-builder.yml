@@ -32,7 +32,6 @@ win:
     - target: nsis
       arch:
         - x64
-  artifactName: ${name}-${version}-setup.${ext}
 
 nsis:
   oneClick: false

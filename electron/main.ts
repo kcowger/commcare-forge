@@ -68,14 +68,20 @@ function setupAutoUpdater() {
   })
 
   autoUpdater.on('error', (err) => {
-    console.log('Auto-updater error:', err.message)
-    // Silent fail — don't bother the user
+    console.error('Auto-updater error:', err.message)
   })
 
   // Check for updates after a short delay so the window is ready
   setTimeout(() => {
-    autoUpdater.checkForUpdates().catch(() => {})
+    autoUpdater.checkForUpdates().catch((err) => {
+      console.error('Update check failed:', err.message)
+    })
   }, 3000)
+
+  // Re-check every 4 hours
+  setInterval(() => {
+    autoUpdater.checkForUpdates().catch(() => {})
+  }, 4 * 60 * 60 * 1000)
 }
 
 app.whenReady().then(() => {
