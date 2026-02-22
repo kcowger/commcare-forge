@@ -5,10 +5,12 @@ import type { FileAttachment, ConversationMessage } from '../types'
 
 export class ClaudeService {
   private client: Anthropic
+  private model: string
   private conversationHistory: Array<{ role: 'user' | 'assistant'; content: any }> = []
 
-  constructor(apiKey: string) {
+  constructor(apiKey: string, model?: string) {
     this.client = new Anthropic({ apiKey })
+    this.model = model || 'claude-sonnet-4-5-20250929'
   }
 
   async sendMessage(message: string, attachments?: FileAttachment[]): Promise<string> {
@@ -16,7 +18,7 @@ export class ClaudeService {
     this.conversationHistory.push({ role: 'user', content: userContent })
 
     const response = await this.client.messages.create({
-      model: 'claude-sonnet-4-5-20250929',
+      model: this.model,
       max_tokens: 8192,
       system: SYSTEM_PROMPT,
       messages: this.conversationHistory
@@ -41,7 +43,7 @@ export class ClaudeService {
     this.conversationHistory.push({ role: 'user', content: userContent })
 
     const stream = this.client.messages.stream({
-      model: 'claude-sonnet-4-5-20250929',
+      model: this.model,
       max_tokens: 8192,
       system: SYSTEM_PROMPT,
       messages: this.conversationHistory
@@ -68,7 +70,7 @@ export class ClaudeService {
     options?: { model?: string; maxTokens?: number }
   ): Promise<string> {
     const stream = this.client.messages.stream({
-      model: options?.model || 'claude-sonnet-4-5-20250929',
+      model: options?.model || this.model,
       max_tokens: options?.maxTokens || 16384,
       system: systemPrompt,
       messages: [{ role: 'user', content: message }]

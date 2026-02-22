@@ -1,5 +1,6 @@
 import React, { useRef, useEffect } from 'react'
 import ReactMarkdown from 'react-markdown'
+import AppPreviewTree from './AppPreviewTree'
 
 interface ArchitecturePanelProps {
   content: string
@@ -40,6 +41,11 @@ export default function ArchitecturePanel({ content, isStreaming, canBuild, onBu
           </span>
         )}
       </div>
+
+      {/* Preview tree */}
+      {content && !isStreaming && (
+        <AppPreviewTree spec={content} />
+      )}
 
       {/* Scrollable content */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 py-4">

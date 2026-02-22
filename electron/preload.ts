@@ -11,6 +11,7 @@ export interface AppSettings {
   apiKey: string | null
   hqServer: string
   hqDomain: string
+  model: string
 }
 
 export interface GenerationProgress {

@@ -6,10 +6,18 @@ interface SettingsModalProps {
   onClose: () => void
 }
 
+const MODEL_OPTIONS = [
+  { value: 'claude-sonnet-4-5-20250929', label: 'Claude Sonnet 4.5 (Recommended)' },
+  { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
+  { value: 'claude-opus-4-6', label: 'Claude Opus 4.6 (Slowest, most capable)' },
+  { value: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5 (Fast, least capable)' },
+]
+
 export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const [apiKey, setApiKey] = useState('')
   const [hqServer, setHqServer] = useState('www.commcarehq.org')
   const [hqDomain, setHqDomain] = useState('')
+  const [model, setModel] = useState('claude-sonnet-4-5-20250929')
   const [saving, setSaving] = useState(false)
   const [hasKey, setHasKey] = useState(false)
 
@@ -20,6 +28,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
         setApiKey(settings.apiKey ? '••••••••••••••••••••' : '')
         setHqServer(settings.hqServer || 'www.commcarehq.org')
         setHqDomain(settings.hqDomain || '')
+        setModel(settings.model || 'claude-sonnet-4-5-20250929')
       })
     }
   }, [isOpen])
@@ -31,7 +40,8 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     try {
       const settings: Partial<AppSettings> = {
         hqServer,
-        hqDomain
+        hqDomain,
+        model
       }
       // Only update API key if user changed it from the masked value
       if (apiKey && !apiKey.startsWith('••')) {
@@ -67,6 +77,21 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             {!hasKey && (
               <p className="text-xs text-amber-400/70 mt-1">Required to use CommCare Forge</p>
             )}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-white/60 mb-1.5">AI Model</label>
+            <select
+              value={model}
+              onChange={e => setModel(e.target.value)}
+              className="w-full rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-sm text-white focus:outline-none focus:border-accent/50 appearance-none cursor-pointer"
+            >
+              {MODEL_OPTIONS.map(opt => (
+                <option key={opt.value} value={opt.value} className="bg-[#111] text-white">
+                  {opt.label}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div>

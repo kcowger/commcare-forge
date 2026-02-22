@@ -19,7 +19,8 @@ const store = new Store<AppSettings>({
   defaults: {
     apiKey: null,
     hqServer: 'www.commcarehq.org',
-    hqDomain: ''
+    hqDomain: '',
+    model: 'claude-sonnet-4-5-20250929'
   },
   encryptionKey: 'commcare-forge-encryption-key'
 })
@@ -70,7 +71,7 @@ function getClaudeService(): ClaudeService {
     if (!apiKey) {
       throw new Error('API key not configured. Please set your Anthropic API key in Settings.')
     }
-    claudeService = new ClaudeService(apiKey)
+    claudeService = new ClaudeService(apiKey, store.get('model'))
     if (pendingHistory) {
       claudeService.setHistory(pendingHistory as Array<{ role: 'user' | 'assistant'; content: any }>)
       pendingHistory = null
@@ -383,7 +384,8 @@ export function registerIpcHandlers(ipcMain: IpcMain) {
     return {
       apiKey: store.get('apiKey') || null,
       hqServer: store.get('hqServer'),
-      hqDomain: store.get('hqDomain')
+      hqDomain: store.get('hqDomain'),
+      model: store.get('model')
     }
   })
 
@@ -394,6 +396,10 @@ export function registerIpcHandlers(ipcMain: IpcMain) {
     }
     if (settings.hqServer !== undefined) store.set('hqServer', settings.hqServer)
     if (settings.hqDomain !== undefined) store.set('hqDomain', settings.hqDomain)
+    if (settings.model !== undefined) {
+      store.set('model', settings.model)
+      claudeService = null
+    }
   })
 
   // Auto-update handlers
