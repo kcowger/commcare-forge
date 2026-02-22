@@ -2,8 +2,10 @@ appId: org.commcareforge.app
 productName: CommCare Forge
 copyright: Copyright (c) 2025 CommCare Forge Contributors
 
+publish: null
+
 directories:
-  output: build/output
+  output: dist
   buildResources: build/resources
 
 files:
