@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import type { Conversation } from '../types'
 
 interface TabBarProps {
@@ -7,10 +7,34 @@ interface TabBarProps {
   onSwitch: (id: string) => void
   onClose: (id: string) => void
   onNew: () => void
+  onRename: (id: string, title: string) => void
   isLoading: boolean
 }
 
-export default function TabBar({ conversations, activeId, onSwitch, onClose, onNew, isLoading }: TabBarProps) {
+export default function TabBar({ conversations, activeId, onSwitch, onClose, onNew, onRename, isLoading }: TabBarProps) {
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editValue, setEditValue] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (editingId && inputRef.current) {
+      inputRef.current.focus()
+      inputRef.current.select()
+    }
+  }, [editingId])
+
+  const startEditing = (conv: Conversation) => {
+    setEditingId(conv.id)
+    setEditValue(conv.title || 'New Chat')
+  }
+
+  const commitEdit = () => {
+    if (editingId && editValue.trim()) {
+      onRename(editingId, editValue.trim())
+    }
+    setEditingId(null)
+  }
+
   return (
     <div className="flex items-center border-b border-white/10 bg-[#0a0a0a] overflow-x-auto scrollbar-hide">
       <div className="flex items-center min-w-0">
@@ -18,6 +42,7 @@ export default function TabBar({ conversations, activeId, onSwitch, onClose, onN
           <button
             key={conv.id}
             onClick={() => { if (!isLoading && conv.id !== activeId) onSwitch(conv.id) }}
+            onDoubleClick={(e) => { e.preventDefault(); startEditing(conv) }}
             className={`group relative flex items-center gap-1.5 px-3 py-2 text-xs min-w-0 max-w-[180px] border-r border-white/5 transition-colors ${
               conv.id === activeId
                 ? 'bg-white/[0.04] text-white/90'
@@ -27,8 +52,23 @@ export default function TabBar({ conversations, activeId, onSwitch, onClose, onN
             {conv.id === activeId && (
               <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-accent" />
             )}
-            <span className="truncate">{conv.title || 'New Chat'}</span>
-            {conversations.length > 1 && (
+            {editingId === conv.id ? (
+              <input
+                ref={inputRef}
+                value={editValue}
+                onChange={e => setEditValue(e.target.value)}
+                onBlur={commitEdit}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') commitEdit()
+                  if (e.key === 'Escape') setEditingId(null)
+                }}
+                onClick={e => e.stopPropagation()}
+                className="bg-transparent border-b border-accent/50 outline-none text-xs text-white/90 w-full min-w-[60px]"
+              />
+            ) : (
+              <span className="truncate">{conv.title || 'New Chat'}</span>
+            )}
+            {conversations.length > 1 && editingId !== conv.id && (
               <span
                 onClick={(e) => {
                   e.stopPropagation()

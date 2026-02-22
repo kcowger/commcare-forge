@@ -270,6 +270,10 @@ export default function App() {
     }
   }, [isLoading, restoreConversation])
 
+  const handleRenameTab = useCallback((id: string, title: string) => {
+    setConversations(prev => prev.map(c => c.id === id ? { ...c, title } : c))
+  }, [])
+
   // --- Upload-first flow handlers ---
 
   const handleUploadExisting = useCallback(async () => {
@@ -479,6 +483,7 @@ export default function App() {
         onSwitch={handleSwitchTab}
         onClose={handleCloseTab}
         onNew={handleNewTab}
+        onRename={handleRenameTab}
         isLoading={isLoading}
       />
 
