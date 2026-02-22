@@ -65,6 +65,12 @@ export type ElectronAPI = {
   onUpdateAvailable: (callback: (version: string) => void) => () => void
   onUpdateDownloadProgress: (callback: (percent: number) => void) => () => void
   onUpdateDownloaded: (callback: () => void) => () => void
+  // Conversation persistence
+  saveConversations: (data: { conversations: any[]; activeId: string }) => Promise<void>
+  loadConversations: () => Promise<{ conversations: any[]; activeId: string } | null>
+  switchBackendConversation: (backendHistory: any[]) => Promise<void>
+  getBackendHistory: () => Promise<any[]>
+  resetChat: () => Promise<void>
 }
 
 const api: ElectronAPI = {
@@ -144,6 +150,22 @@ const api: ElectronAPI = {
     const handler = () => callback()
     ipcRenderer.on('update:downloaded', handler)
     return () => ipcRenderer.removeListener('update:downloaded', handler)
+  },
+  // Conversation persistence
+  saveConversations: (data: { conversations: any[]; activeId: string }) => {
+    return ipcRenderer.invoke('conversations:save', data)
+  },
+  loadConversations: () => {
+    return ipcRenderer.invoke('conversations:load')
+  },
+  switchBackendConversation: (backendHistory: any[]) => {
+    return ipcRenderer.invoke('conversations:switch-backend', backendHistory)
+  },
+  getBackendHistory: () => {
+    return ipcRenderer.invoke('conversations:get-backend-history')
+  },
+  resetChat: () => {
+    return ipcRenderer.invoke('chat:reset')
   }
 }
 

@@ -49,6 +49,21 @@ export interface CczParseResult {
   filePath: string
 }
 
+export interface Conversation {
+  id: string
+  title: string
+  messages: ChatMessage[]
+  architectureSpec: string | null
+  panelMode: 'chat' | 'uploaded'
+  uploadedFilePath: string | null
+  uploadedAppName: string | null
+  generationProgress: GenerationProgress | null
+  generationResult: GenerationResult | null
+  hqImportResult: HqImportResult | null
+  backendHistory: Array<{ role: string; content: any }>
+  createdAt: number
+}
+
 export interface ElectronAPI {
   sendMessage: (message: string, attachments?: FileAttachment[]) => Promise<string>
   streamMessage: (message: string, attachments?: FileAttachment[]) => Promise<string>
@@ -72,6 +87,11 @@ export interface ElectronAPI {
   onUpdateAvailable: (callback: (version: string) => void) => () => void
   onUpdateDownloadProgress: (callback: (percent: number) => void) => () => void
   onUpdateDownloaded: (callback: () => void) => () => void
+  saveConversations: (data: { conversations: any[]; activeId: string }) => Promise<void>
+  loadConversations: () => Promise<{ conversations: any[]; activeId: string } | null>
+  switchBackendConversation: (backendHistory: any[]) => Promise<void>
+  getBackendHistory: () => Promise<any[]>
+  resetChat: () => Promise<void>
 }
 
 declare global {

@@ -101,6 +101,14 @@ export class ClaudeService {
     this.conversationHistory = []
   }
 
+  getHistory(): Array<{ role: 'user' | 'assistant'; content: any }> {
+    return this.conversationHistory
+  }
+
+  setHistory(history: Array<{ role: 'user' | 'assistant'; content: any }>): void {
+    this.conversationHistory = history
+  }
+
   private async buildUserContent(message: string, attachments?: FileAttachment[]): Promise<any> {
     if (!attachments || attachments.length === 0) {
       return message

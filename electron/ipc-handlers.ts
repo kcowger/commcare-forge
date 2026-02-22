@@ -1,4 +1,4 @@
-import { IpcMain, BrowserWindow, dialog, shell } from 'electron'
+import { IpcMain, BrowserWindow, dialog, shell, app } from 'electron'
 import electronUpdater from 'electron-updater'
 const { autoUpdater } = electronUpdater
 import { ClaudeService } from '@backend/services/claude'
@@ -25,6 +25,44 @@ const store = new Store<AppSettings>({
 })
 
 let claudeService: ClaudeService | null = null
+let pendingHistory: Array<{ role: string; content: any }> | null = null
+
+function getConversationsFilePath(): string {
+  return path.join(app.getPath('userData'), 'conversations.json')
+}
+
+function stripBase64FromBackendHistory(
+  history: Array<{ role: string; content: any }>
+): Array<{ role: string; content: any }> {
+  return history.map(msg => {
+    if (typeof msg.content === 'string') return msg
+    if (!Array.isArray(msg.content)) return msg
+    return {
+      ...msg,
+      content: msg.content.map((block: any) => {
+        if (block.type === 'image' && block.source?.type === 'base64') {
+          return { type: 'text', text: '[Previously uploaded image]' }
+        }
+        if (block.type === 'document' && block.source?.type === 'base64') {
+          return { type: 'text', text: '[Previously uploaded PDF document]' }
+        }
+        return block
+      })
+    }
+  })
+}
+
+function stripBase64FromFrontendMessages(messages: any[]): any[] {
+  return messages.map(msg => ({
+    ...msg,
+    attachments: msg.attachments?.map((att: any) => ({
+      name: att.name,
+      type: att.type,
+      size: att.size,
+      data: ''
+    }))
+  }))
+}
 
 function getClaudeService(): ClaudeService {
   if (!claudeService) {
@@ -33,6 +71,10 @@ function getClaudeService(): ClaudeService {
       throw new Error('API key not configured. Please set your Anthropic API key in Settings.')
     }
     claudeService = new ClaudeService(apiKey)
+    if (pendingHistory) {
+      claudeService.setHistory(pendingHistory as Array<{ role: 'user' | 'assistant'; content: any }>)
+      pendingHistory = null
+    }
   }
   return claudeService
 }
@@ -361,5 +403,75 @@ export function registerIpcHandlers(ipcMain: IpcMain) {
 
   ipcMain.handle('update:install', () => {
     autoUpdater.quitAndInstall()
+  })
+
+  // Conversation persistence handlers
+  ipcMain.handle('conversations:save', async (_event, data: { conversations: any[]; activeId: string }) => {
+    try {
+      const filePath = getConversationsFilePath()
+      // Get current backend history for the active conversation
+      const backendHistory = claudeService ? claudeService.getHistory() : []
+      const stripped = {
+        conversations: data.conversations.map((conv: any) => ({
+          ...conv,
+          messages: stripBase64FromFrontendMessages(conv.messages),
+          backendHistory: conv.id === data.activeId
+            ? stripBase64FromBackendHistory(backendHistory)
+            : stripBase64FromBackendHistory(conv.backendHistory || [])
+        })),
+        activeId: data.activeId
+      }
+      fs.writeFileSync(filePath, JSON.stringify(stripped), 'utf-8')
+    } catch (err) {
+      console.error('Failed to save conversations:', err)
+    }
+  })
+
+  ipcMain.handle('conversations:load', async () => {
+    try {
+      const filePath = getConversationsFilePath()
+      if (!fs.existsSync(filePath)) return null
+      const raw = fs.readFileSync(filePath, 'utf-8')
+      const data = JSON.parse(raw)
+      if (!data || !Array.isArray(data.conversations)) return null
+
+      // Find active conversation and set its backend history as pending
+      const active = data.conversations.find((c: any) => c.id === data.activeId)
+      if (active?.backendHistory?.length > 0) {
+        if (claudeService) {
+          claudeService.setHistory(active.backendHistory)
+        } else {
+          pendingHistory = active.backendHistory
+        }
+      }
+
+      return data
+    } catch (err) {
+      console.error('Failed to load conversations:', err)
+      return null
+    }
+  })
+
+  ipcMain.handle('conversations:switch-backend', async (_event, backendHistory: any[]) => {
+    try {
+      if (claudeService) {
+        claudeService.setHistory(backendHistory || [])
+      } else {
+        pendingHistory = backendHistory || null
+      }
+    } catch (err) {
+      console.error('Failed to switch backend conversation:', err)
+    }
+  })
+
+  ipcMain.handle('conversations:get-backend-history', async () => {
+    return claudeService ? claudeService.getHistory() : []
+  })
+
+  ipcMain.handle('chat:reset', async () => {
+    if (claudeService) {
+      claudeService.resetConversation()
+    }
+    pendingHistory = null
   })
 }

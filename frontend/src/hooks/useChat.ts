@@ -107,6 +107,9 @@ export function useChat() {
     setMessages([])
     setArchitectureSpec(null)
     setIsSpecStreaming(false)
+    if (window.electronAPI) {
+      window.electronAPI.resetChat()
+    }
   }, [])
 
   const injectMessages = useCallback((userContent: string, assistantContent: string) => {
@@ -129,5 +132,12 @@ export function useChat() {
     setArchitectureSpec(spec)
   }, [])
 
-  return { messages, isLoading, sendMessage, clearMessages, architectureSpec, isSpecStreaming, injectMessages, setSpec }
+  const restoreState = useCallback((savedMessages: ChatMessage[], savedSpec: string | null) => {
+    setMessages(savedMessages)
+    setArchitectureSpec(savedSpec)
+    setIsSpecStreaming(false)
+    setIsLoading(false)
+  }, [])
+
+  return { messages, isLoading, sendMessage, clearMessages, architectureSpec, isSpecStreaming, injectMessages, setSpec, restoreState }
 }
