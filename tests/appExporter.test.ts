@@ -1,7 +1,7 @@
 import { describe, it, expect, afterAll } from 'vitest'
 import { AppExporter } from '../backend/src/services/appExporter'
 import { existsSync, readFileSync, rmSync } from 'fs'
-import { join } from 'path'
+import { join, basename } from 'path'
 
 const exporter = new AppExporter()
 
@@ -33,11 +33,12 @@ describe('AppExporter', () => {
 
   it('sanitizes special characters from filename', () => {
     const hqJson = { doc_type: 'Application', name: 'App' }
-    const path = exporter.exportForHQSync('App/With\\Specials!', hqJson)
-    expect(path).not.toContain('/')
-    expect(path).not.toContain('\\\\')
-    expect(path).not.toContain('!')
-    expect(existsSync(path)).toBe(true)
+    const filePath = exporter.exportForHQSync('App/With\\Specials!', hqJson)
+    const name = basename(filePath)
+    expect(name).not.toContain('/')
+    expect(name).not.toContain('\\')
+    expect(name).not.toContain('!')
+    expect(existsSync(filePath)).toBe(true)
   })
 
   it('creates export directory if it does not exist', () => {
