@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2d3a4a"/>
+      <stop offset="100%" stop-color="#1a2332"/>
+    </linearGradient>
+    <linearGradient id="spark" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0%" stop-color="#0ea5e9"/>
+      <stop offset="100%" stop-color="#38bdf8"/>
+    </linearGradient>
+    <linearGradient id="face" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#3b4d63"/>
+      <stop offset="100%" stop-color="#2d3a4a"/>
+    </linearGradient>
+  </defs>
+  <!-- Background circle -->
+  <circle cx="256" cy="256" r="240" fill="url(#body)"/>
+  <!-- Anvil base (wide bottom) -->
+  <path d="M136 360 L160 320 L352 320 L376 360 Z" fill="url(#face)" stroke="#4a5f78" stroke-width="2"/>
+  <!-- Anvil body (middle column) -->
+  <rect x="200" y="240" width="112" height="80" rx="4" fill="url(#face)" stroke="#4a5f78" stroke-width="2"/>
+  <!-- Anvil top (working surface with horn) -->
+  <path d="M120 240 Q120 208 152 208 L360 208 Q384 208 384 228 L384 240 Z" fill="#4a5f78" stroke="#5a7a96" stroke-width="2"/>
+  <!-- Anvil horn (pointed left side) -->
+  <path d="M120 240 Q100 224 108 212 L152 208" fill="#4a5f78" stroke="#5a7a96" stroke-width="1"/>
+  <!-- Top surface highlight -->
+  <path d="M140 218 L370 218 Q378 218 378 224 L378 232 L140 232 Z" fill="#5a7a96" opacity="0.4"/>
+  <!-- Spark cluster - main -->
+  <circle cx="256" cy="168" r="12" fill="url(#spark)" opacity="0.95"/>
+  <!-- Spark rays -->
+  <line x1="256" y1="144" x2="256" y2="132" stroke="#38bdf8" stroke-width="4" stroke-linecap="round" opacity="0.9"/>
+  <line x1="276" y1="152" x2="286" y2="142" stroke="#38bdf8" stroke-width="3.5" stroke-linecap="round" opacity="0.8"/>
+  <line x1="236" y1="152" x2="226" y2="142" stroke="#38bdf8" stroke-width="3.5" stroke-linecap="round" opacity="0.8"/>
+  <line x1="282" y1="168" x2="294" y2="164" stroke="#38bdf8" stroke-width="3" stroke-linecap="round" opacity="0.6"/>
+  <line x1="230" y1="168" x2="218" y2="164" stroke="#38bdf8" stroke-width="3" stroke-linecap="round" opacity="0.6"/>
+  <!-- Small scattered sparks -->
+  <circle cx="300" cy="136" r="3" fill="#7dd3fc" opacity="0.7"/>
+  <circle cx="212" cy="140" r="2.5" fill="#7dd3fc" opacity="0.6"/>
+  <circle cx="270" cy="128" r="2" fill="#bae6fd" opacity="0.5"/>
+  <!-- Subtle glow behind spark -->
+  <circle cx="256" cy="168" r="28" fill="#0ea5e9" opacity="0.12"/>
+  <circle cx="256" cy="160" r="48" fill="#0ea5e9" opacity="0.05"/>
+</svg>
