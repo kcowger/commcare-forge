@@ -1,4 +1,5 @@
 import { IpcMain, BrowserWindow, dialog, shell } from 'electron'
+import { autoUpdater } from 'electron-updater'
 import { ClaudeService } from '@backend/services/claude'
 import { AppGenerator } from '@backend/services/appGenerator'
 import { CliValidator } from '@backend/services/cliValidator'
@@ -350,5 +351,14 @@ export function registerIpcHandlers(ipcMain: IpcMain) {
     }
     if (settings.hqServer !== undefined) store.set('hqServer', settings.hqServer)
     if (settings.hqDomain !== undefined) store.set('hqDomain', settings.hqDomain)
+  })
+
+  // Auto-update handlers
+  ipcMain.handle('update:download', async () => {
+    await autoUpdater.downloadUpdate()
+  })
+
+  ipcMain.handle('update:install', () => {
+    autoUpdater.quitAndInstall()
   })
 }

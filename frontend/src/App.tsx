@@ -29,6 +29,13 @@ export default function App() {
   const [nameModalOpen, setNameModalOpen] = useState(false)
   const [pendingAppName, setPendingAppName] = useState('CommCare App')
 
+  // Auto-update state
+  const [updateAvailable, setUpdateAvailable] = useState<string | null>(null)
+  const [updateDownloading, setUpdateDownloading] = useState(false)
+  const [updateDownloadPercent, setUpdateDownloadPercent] = useState(0)
+  const [updateReady, setUpdateReady] = useState(false)
+  const [updateDismissed, setUpdateDismissed] = useState(false)
+
   useEffect(() => {
     if (window.electronAPI) {
       window.electronAPI.getApiKey().then(key => {
@@ -46,6 +53,24 @@ export default function App() {
       setGenerationProgress(progress)
     })
     return cleanup
+  }, [])
+
+  // Auto-update listeners
+  useEffect(() => {
+    if (!window.electronAPI) return
+    const cleanups = [
+      window.electronAPI.onUpdateAvailable((version) => {
+        setUpdateAvailable(version)
+      }),
+      window.electronAPI.onUpdateDownloadProgress((percent) => {
+        setUpdateDownloadPercent(percent)
+      }),
+      window.electronAPI.onUpdateDownloaded(() => {
+        setUpdateDownloading(false)
+        setUpdateReady(true)
+      })
+    ]
+    return () => cleanups.forEach(fn => fn())
   }, [])
 
   // Mode transition: when Claude starts streaming a new spec while in uploaded mode, switch to chat mode
@@ -221,6 +246,55 @@ export default function App() {
 
   return (
     <div className="h-screen flex flex-col bg-[#0a0a0a] text-white">
+      {/* Auto-update banner */}
+      {updateAvailable && !updateDismissed && (
+        <div className="flex items-center justify-between px-4 py-2 bg-accent/10 border-b border-accent/20 text-sm">
+          <div className="flex items-center gap-3">
+            {updateReady ? (
+              <>
+                <span className="text-white/80">Update ready — restart to install v{updateAvailable}</span>
+                <button
+                  onClick={() => window.electronAPI?.installUpdate()}
+                  className="px-3 py-1 rounded-md bg-accent hover:bg-accent-light text-white text-xs font-medium transition-colors"
+                >
+                  Restart now
+                </button>
+              </>
+            ) : updateDownloading ? (
+              <>
+                <span className="text-white/60">Downloading update... {updateDownloadPercent}%</span>
+                <div className="w-32 h-1.5 rounded-full bg-white/10 overflow-hidden">
+                  <div
+                    className="h-full bg-accent rounded-full transition-all duration-300"
+                    style={{ width: `${updateDownloadPercent}%` }}
+                  />
+                </div>
+              </>
+            ) : (
+              <>
+                <span className="text-white/80">A new version (v{updateAvailable}) is available</span>
+                <button
+                  onClick={() => {
+                    setUpdateDownloading(true)
+                    window.electronAPI?.downloadUpdate()
+                  }}
+                  className="px-3 py-1 rounded-md bg-accent hover:bg-accent-light text-white text-xs font-medium transition-colors"
+                >
+                  Download
+                </button>
+              </>
+            )}
+          </div>
+          <button
+            onClick={() => setUpdateDismissed(true)}
+            className="text-white/40 hover:text-white/70 transition-colors ml-4"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+      )}
       <Header
         onOpenSettings={() => setSettingsOpen(true)}
         onNewChat={() => {

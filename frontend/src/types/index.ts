@@ -67,6 +67,11 @@ export interface ElectronAPI {
   uploadAndParse: () => Promise<CczParseResult | null>
   validateUploaded: (filePath: string) => Promise<GenerationResult>
   injectChatContext: (userMessage: string, assistantMessage: string) => Promise<void>
+  downloadUpdate: () => Promise<void>
+  installUpdate: () => Promise<void>
+  onUpdateAvailable: (callback: (version: string) => void) => () => void
+  onUpdateDownloadProgress: (callback: (percent: number) => void) => () => void
+  onUpdateDownloaded: (callback: () => void) => () => void
 }
 
 declare global {

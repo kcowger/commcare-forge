@@ -59,6 +59,12 @@ export type ElectronAPI = {
   uploadAndParse: () => Promise<CczParseResult | null>
   validateUploaded: (filePath: string) => Promise<GenerationResult>
   injectChatContext: (userMessage: string, assistantMessage: string) => Promise<void>
+  // Auto-update
+  downloadUpdate: () => Promise<void>
+  installUpdate: () => Promise<void>
+  onUpdateAvailable: (callback: (version: string) => void) => () => void
+  onUpdateDownloadProgress: (callback: (percent: number) => void) => () => void
+  onUpdateDownloaded: (callback: () => void) => () => void
 }
 
 const api: ElectronAPI = {
@@ -116,6 +122,28 @@ const api: ElectronAPI = {
   },
   injectChatContext: (userMessage: string, assistantMessage: string) => {
     return ipcRenderer.invoke('chat:inject-context', userMessage, assistantMessage)
+  },
+  // Auto-update
+  downloadUpdate: () => {
+    return ipcRenderer.invoke('update:download')
+  },
+  installUpdate: () => {
+    return ipcRenderer.invoke('update:install')
+  },
+  onUpdateAvailable: (callback: (version: string) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, version: string) => callback(version)
+    ipcRenderer.on('update:available', handler)
+    return () => ipcRenderer.removeListener('update:available', handler)
+  },
+  onUpdateDownloadProgress: (callback: (percent: number) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, percent: number) => callback(percent)
+    ipcRenderer.on('update:download-progress', handler)
+    return () => ipcRenderer.removeListener('update:download-progress', handler)
+  },
+  onUpdateDownloaded: (callback: () => void) => {
+    const handler = () => callback()
+    ipcRenderer.on('update:downloaded', handler)
+    return () => ipcRenderer.removeListener('update:downloaded', handler)
   }
 }
 
