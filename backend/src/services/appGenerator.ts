@@ -60,7 +60,7 @@ export class AppGenerator {
 
     logger.log(`Claude response received (${response.length} chars)`)
 
-    let compact = this.parseCompactFromResponse(response)
+    let compact = parseCompactFromResponse(response)
     if (!compact) {
       logger.log('FATAL: Failed to parse compact JSON from Claude response')
       logger.logSection('RAW RESPONSE (first 3000 chars)')
@@ -149,7 +149,7 @@ export class AppGenerator {
 
       logger.log(`Fix response received (${fixResponse.length} chars)`)
 
-      const fixedCompact = this.parseCompactFromResponse(fixResponse)
+      const fixedCompact = parseCompactFromResponse(fixResponse)
       if (!fixedCompact) {
         logger.log('FATAL: Failed to parse fixed compact JSON')
         logger.logSection('RAW FIX RESPONSE (first 3000 chars)')
@@ -260,145 +260,6 @@ export class AppGenerator {
     }
   }
 
-  /** Parse compact app JSON from Claude response, with repair for truncated output. */
-  private parseCompactFromResponse(response: string): CompactApp | null {
-    // Strategy 1: Find JSON in a ```json code block
-    const jsonBlocks = [...response.matchAll(/```json\s*\n([\s\S]*?)\n```/g)]
-    for (const match of jsonBlocks.reverse()) {
-      const result = this.tryParseCompact(match[1])
-      if (result) return result
-    }
-
-    // Strategy 2: Find any code block (may be truncated — no closing ```)
-    const openBlock = response.match(/```json\s*\n([\s\S]+)/)
-    if (openBlock) {
-      // Strip trailing ``` if present
-      let content = openBlock[1].replace(/\n```\s*$/, '')
-      const result = this.tryParseCompact(content)
-      if (result) return result
-    }
-
-    // Strategy 3: Find outermost { ... }
-    const braceStart = response.indexOf('{')
-    if (braceStart !== -1) {
-      const braceEnd = response.lastIndexOf('}')
-      if (braceEnd > braceStart) {
-        const result = this.tryParseCompact(response.substring(braceStart, braceEnd + 1))
-        if (result) return result
-      }
-      // Try from { to end of response (truncated)
-      const result = this.tryParseCompact(response.substring(braceStart))
-      if (result) return result
-    }
-
-    return null
-  }
-
-  /** Try to parse JSON, with repair for truncation. */
-  private tryParseCompact(json: string): CompactApp | null {
-    // Direct parse
-    try {
-      const parsed = JSON.parse(json)
-      if (this.looksLikeCompact(parsed)) return parsed as CompactApp
-    } catch { /* try repair */ }
-
-    // Repair: remove trailing comma, close open brackets/braces
-    const repaired = this.repairTruncatedJson(json)
-    if (repaired !== json) {
-      try {
-        const parsed = JSON.parse(repaired)
-        if (this.looksLikeCompact(parsed)) return parsed as CompactApp
-      } catch { /* give up */ }
-    }
-
-    return null
-  }
-
-  /** Attempt to repair truncated JSON by finding the last complete value and closing brackets. */
-  private repairTruncatedJson(json: string): string {
-    // Scan forward tracking structure, find the position of the last complete value
-    let inString = false
-    let lastCompleteValueEnd = -1
-    const stack: string[] = []
-
-    for (let i = 0; i < json.length; i++) {
-      const ch = json[i]
-
-      if (inString) {
-        if (ch === '\\') { i++; continue } // skip escaped char
-        if (ch === '"') {
-          inString = false
-          lastCompleteValueEnd = i
-        }
-        continue
-      }
-
-      // Not in string
-      if (ch === '"') {
-        inString = true
-        continue
-      }
-      if (ch === '{') { stack.push('}'); continue }
-      if (ch === '[') { stack.push(']'); continue }
-      if (ch === '}' || ch === ']') {
-        stack.pop()
-        lastCompleteValueEnd = i
-        continue
-      }
-      // Numbers, booleans, null
-      if (/[\d.eE+\-]/.test(ch) || 'truefalsnul'.includes(ch)) {
-        lastCompleteValueEnd = i
-      }
-    }
-
-    // If we're inside an unclosed string, the JSON is truncated mid-value
-    // Truncate to the last complete value
-    let s: string
-    if (inString || stack.length > 0) {
-      // If still inside a string, go back to last complete value
-      if (inString && lastCompleteValueEnd >= 0) {
-        s = json.substring(0, lastCompleteValueEnd + 1)
-      } else {
-        s = json
-      }
-    } else {
-      // JSON might be complete
-      s = json
-    }
-
-    // Remove trailing commas and whitespace
-    s = s.replace(/[\s,]*$/, '')
-
-    // Strip dangling key (a string followed by nothing, at end of an object)
-    // Pattern: ,"key" or {"key" at the end — key with no : value
-    s = s.replace(/,\s*"[^"]*"\s*$/, '')
-    s = s.replace(/\{\s*"[^"]*"\s*$/, '{')
-
-    // Recount open brackets after truncation
-    const finalStack: string[] = []
-    inString = false
-    for (let i = 0; i < s.length; i++) {
-      if (s[i] === '\\' && inString) { i++; continue }
-      if (s[i] === '"') { inString = !inString; continue }
-      if (inString) continue
-      if (s[i] === '{') finalStack.push('}')
-      else if (s[i] === '[') finalStack.push(']')
-      else if (s[i] === '}' || s[i] === ']') finalStack.pop()
-    }
-
-    // Close unclosed brackets/braces
-    while (finalStack.length > 0) {
-      s += finalStack.pop()
-    }
-
-    return s
-  }
-
-  /** Check if parsed JSON looks like a compact app definition. */
-  private looksLikeCompact(obj: any): boolean {
-    return obj && typeof obj === 'object' && Array.isArray(obj.modules) && obj.modules.length > 0
-  }
-
   private inferAppName(context: string): string {
     const firstLine = context.split('\n').find(l => l.startsWith('User:'))
     if (firstLine) {
@@ -414,4 +275,102 @@ export class AppGenerator {
     }
     return 'CommCare App'
   }
+}
+
+// --- Exported for testing ---
+
+function looksLikeCompact(obj: any): boolean {
+  return obj && typeof obj === 'object' && Array.isArray(obj.modules) && obj.modules.length > 0
+}
+
+/** Attempt to repair truncated JSON by closing unclosed brackets/braces. */
+export function repairTruncatedJson(json: string): string {
+  let inString = false
+  let lastCompleteValueEnd = -1
+  const stack: string[] = []
+
+  for (let i = 0; i < json.length; i++) {
+    const ch = json[i]
+    if (inString) {
+      if (ch === '\\') { i++; continue }
+      if (ch === '"') { inString = false; lastCompleteValueEnd = i }
+      continue
+    }
+    if (ch === '"') { inString = true; continue }
+    if (ch === '{') { stack.push('}'); continue }
+    if (ch === '[') { stack.push(']'); continue }
+    if (ch === '}' || ch === ']') { stack.pop(); lastCompleteValueEnd = i; continue }
+    if (/[\d.eE+\-]/.test(ch) || 'truefalsnul'.includes(ch)) { lastCompleteValueEnd = i }
+  }
+
+  let s: string
+  if (inString || stack.length > 0) {
+    s = (inString && lastCompleteValueEnd >= 0) ? json.substring(0, lastCompleteValueEnd + 1) : json
+  } else {
+    s = json
+  }
+
+  s = s.replace(/[\s,]*$/, '')
+  s = s.replace(/,\s*"[^"]*"\s*$/, '')
+  s = s.replace(/\{\s*"[^"]*"\s*$/, '{')
+
+  const finalStack: string[] = []
+  inString = false
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === '\\' && inString) { i++; continue }
+    if (s[i] === '"') { inString = !inString; continue }
+    if (inString) continue
+    if (s[i] === '{') finalStack.push('}')
+    else if (s[i] === '[') finalStack.push(']')
+    else if (s[i] === '}' || s[i] === ']') finalStack.pop()
+  }
+
+  while (finalStack.length > 0) { s += finalStack.pop() }
+  return s
+}
+
+/** Try to parse JSON as a compact app, with repair for truncation. */
+export function tryParseCompact(json: string): CompactApp | null {
+  try {
+    const parsed = JSON.parse(json)
+    if (looksLikeCompact(parsed)) return parsed as CompactApp
+  } catch { /* try repair */ }
+
+  const repaired = repairTruncatedJson(json)
+  if (repaired !== json) {
+    try {
+      const parsed = JSON.parse(repaired)
+      if (looksLikeCompact(parsed)) return parsed as CompactApp
+    } catch { /* give up */ }
+  }
+  return null
+}
+
+/** Parse compact app JSON from Claude response text. */
+export function parseCompactFromResponse(response: string): CompactApp | null {
+  const jsonBlocks = [...response.matchAll(/```json\s*\n([\s\S]*?)\n```/g)]
+  for (const match of jsonBlocks.reverse()) {
+    const result = tryParseCompact(match[1])
+    if (result) return result
+  }
+
+  const openBlock = response.match(/```json\s*\n([\s\S]+)/)
+  if (openBlock) {
+    const content = openBlock[1].replace(/\n```\s*$/, '')
+    const result = tryParseCompact(content)
+    if (result) return result
+  }
+
+  const braceStart = response.indexOf('{')
+  if (braceStart !== -1) {
+    const braceEnd = response.lastIndexOf('}')
+    if (braceEnd > braceStart) {
+      const result = tryParseCompact(response.substring(braceStart, braceEnd + 1))
+      if (result) return result
+    }
+    const result = tryParseCompact(response.substring(braceStart))
+    if (result) return result
+  }
+
+  return null
 }

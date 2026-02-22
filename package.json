@@ -13,6 +13,8 @@
     "dist:mac": "electron-vite build && electron-builder --mac",
     "dist:linux": "electron-vite build && electron-builder --linux",
     "download-cli": "bash scripts/download-cli.sh",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "test:integration": "echo 'Integration tests require Java 17+'"
   },
   "dependencies": {
@@ -41,7 +43,8 @@
     "sharp": "^0.34.5",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.2",
-    "vite": "^5.4.11"
+    "vite": "^5.4.11",
+    "vitest": "^4.0.18"
   },
   "author": "Kai Cowger",
   "license": "BSD-3-Clause",
