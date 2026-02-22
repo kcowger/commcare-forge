@@ -376,6 +376,22 @@ function buildCaseDetails(columns: { field: string; header: string }[]): any {
     relevant: '', case_tile_field: null, nodeset: ''
   }))
 
+  // Always ensure case_name is the first column in the case list
+  if (!shortColumns.some(col => col.field === 'case_name' || col.field === 'name')) {
+    shortColumns.unshift({
+      doc_type: 'DetailColumn',
+      header: { en: 'Name' },
+      field: 'case_name',
+      model: 'case',
+      format: 'plain',
+      calc_xpath: '.', filter_xpath: '', advanced: '',
+      late_flag: 30, time_ago_interval: 365.25,
+      useXpathExpression: false, hasNodeset: false, hasAutocomplete: false,
+      isTab: false, enum: [], graph_configuration: null,
+      relevant: '', case_tile_field: null, nodeset: ''
+    })
+  }
+
   const detailBase = {
     sort_elements: [], tabs: [], filter: null,
     lookup_enabled: false, lookup_autolaunch: false, lookup_display_results: false,
