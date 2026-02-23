@@ -21,9 +21,22 @@ jobs:
 
       - run: npm ci
 
-      - run: npx electron-vite build && npx electron-builder --win --publish always
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: npx electron-vite build && npx electron-builder --win --publish never
+
+      - name: Debug filenames
+        run: |
+          echo "=== dist files ==="
+          ls dist/
+          echo "=== latest.yml ==="
+          cat dist/latest.yml
+        shell: bash
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: |
+            dist/*.exe
+            dist/latest.yml
 
   build-mac:
     runs-on: macos-latest
@@ -37,9 +50,21 @@ jobs:
 
       - run: npm ci
 
-      - run: npx electron-vite build && npx electron-builder --mac --publish always
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: npx electron-vite build && npx electron-builder --mac --publish never
+
+      - name: Debug filenames
+        run: |
+          echo "=== dist files ==="
+          ls dist/
+          echo "=== latest-mac.yml ==="
+          cat dist/latest-mac.yml
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac-installer
+          path: |
+            dist/*.dmg
+            dist/latest-mac.yml
 
   build-linux:
     runs-on: ubuntu-latest
@@ -53,6 +78,40 @@ jobs:
 
       - run: npm ci
 
-      - run: npx electron-vite build && npx electron-builder --linux --publish always
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: npx electron-vite build && npx electron-builder --linux AppImage --publish never
+
+      - name: Debug filenames
+        run: |
+          echo "=== dist files ==="
+          ls dist/
+          echo "=== latest-linux.yml ==="
+          cat dist/latest-linux.yml
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-installer
+          path: |
+            dist/*.AppImage
+            dist/latest-linux.yml
+
+  publish:
+    needs: [build-windows, build-mac, build-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Debug artifacts
+        run: find artifacts -type f | sort
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/windows-installer/*.exe
+            artifacts/windows-installer/latest.yml
+            artifacts/mac-installer/*.dmg
+            artifacts/mac-installer/latest-mac.yml
+            artifacts/linux-installer/*.AppImage
+            artifacts/linux-installer/latest-linux.yml

@@ -23,6 +23,7 @@ files:
 
 mac:
   category: public.app-category.developer-tools
+  artifactName: commcare-forge-${version}-${arch}.${ext}
   target:
     - target: dmg
       arch:
@@ -30,6 +31,7 @@ mac:
   darkModeSupport: true
 
 win:
+  artifactName: commcare-forge-${version}-setup.${ext}
   target:
     - target: nsis
       arch:
@@ -40,6 +42,7 @@ nsis:
   allowToChangeInstallationDirectory: true
 
 linux:
+  artifactName: commcare-forge-${version}.${ext}
   target:
     - target: AppImage
       arch:
