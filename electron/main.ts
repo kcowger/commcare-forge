@@ -128,20 +128,22 @@ function setupAutoUpdater() {
 }
 
 app.whenReady().then(() => {
-  // Content Security Policy — only for HTTPS responses (file:// doesn't use HTTP headers)
-  session.defaultSession.webRequest.onHeadersReceived(
-    { urls: ['https://*/*', 'http://*/*'] },
-    (details, callback) => {
-      callback({
-        responseHeaders: {
-          ...details.responseHeaders,
-          'Content-Security-Policy': [
-            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src https://api.anthropic.com; img-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'"
-          ]
-        }
-      })
-    }
-  )
+  // Content Security Policy — production only (dev mode needs inline scripts and WS for Vite HMR)
+  if (!process.env.ELECTRON_RENDERER_URL) {
+    session.defaultSession.webRequest.onHeadersReceived(
+      { urls: ['https://*/*', 'http://*/*'] },
+      (details, callback) => {
+        callback({
+          responseHeaders: {
+            ...details.responseHeaders,
+            'Content-Security-Policy': [
+              "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src https://api.anthropic.com; img-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'"
+            ]
+          }
+        })
+      }
+    )
+  }
 
   createWindow()
   setupAutoUpdater()
