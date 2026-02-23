@@ -8,7 +8,14 @@ export interface FileAttachment {
 }
 
 export interface AppSettings {
-  apiKey: string | null
+  hasApiKey: boolean
+  hqServer: string
+  hqDomain: string
+  model: string
+}
+
+// Internal store type (API key stored separately via safeStorage)
+export interface StoreSettings {
   hqServer: string
   hqDomain: string
   model: string
@@ -46,7 +53,7 @@ export interface CczParseResult {
 export type ElectronAPI = {
   sendMessage: (message: string, attachments?: FileAttachment[]) => Promise<string>
   streamMessage: (message: string, attachments?: FileAttachment[]) => Promise<string>
-  getApiKey: () => Promise<string | null>
+  getApiKey: () => Promise<{ hasKey: boolean; maskedKey: string | null }>
   setApiKey: (key: string) => Promise<void>
   getSettings: () => Promise<AppSettings>
   setSettings: (settings: Partial<AppSettings>) => Promise<void>

@@ -15,7 +15,7 @@ export interface ChatMessage {
 }
 
 export interface AppSettings {
-  apiKey: string | null
+  hasApiKey: boolean
   hqServer: string
   hqDomain: string
   model: string
@@ -68,7 +68,7 @@ export interface Conversation {
 export interface ElectronAPI {
   sendMessage: (message: string, attachments?: FileAttachment[]) => Promise<string>
   streamMessage: (message: string, attachments?: FileAttachment[]) => Promise<string>
-  getApiKey: () => Promise<string | null>
+  getApiKey: () => Promise<{ hasKey: boolean; maskedKey: string | null }>
   setApiKey: (key: string) => Promise<void>
   getSettings: () => Promise<AppSettings>
   setSettings: (settings: Partial<AppSettings>) => Promise<void>

@@ -1,4 +1,4 @@
-import { IpcMain, BrowserWindow, dialog, shell, app } from 'electron'
+import { IpcMain, BrowserWindow, dialog, shell, app, safeStorage } from 'electron'
 import electronUpdater from 'electron-updater'
 const { autoUpdater } = electronUpdater
 import { ClaudeService } from '@backend/services/claude'
@@ -10,20 +10,93 @@ import { HqValidator } from '@backend/services/hqValidator'
 import { CczParser } from '@backend/services/cczParser'
 import { AutoFixer } from '@backend/services/autoFixer'
 import { CczBuilder } from '@backend/services/cczBuilder'
-import type { FileAttachment, AppSettings } from './preload'
+import type { FileAttachment, StoreSettings } from './preload'
 import Store from 'electron-store'
 import fs from 'fs'
 import path from 'path'
+import os from 'os'
 
-const store = new Store<AppSettings>({
+// Non-sensitive settings — no encryption needed
+const store = new Store<StoreSettings>({
   defaults: {
-    apiKey: null,
     hqServer: 'www.commcarehq.org',
     hqDomain: '',
     model: 'claude-sonnet-4-5-20250929'
-  },
-  encryptionKey: 'commcare-forge-encryption-key'
+  }
 })
+
+// Secure API key storage using OS-level encryption (DPAPI/Keychain/libsecret)
+const API_KEY_FILE = path.join(app.getPath('userData'), '.api-key')
+
+function getSecureApiKey(): string | null {
+  try {
+    if (!fs.existsSync(API_KEY_FILE)) return null
+    const encrypted = fs.readFileSync(API_KEY_FILE)
+    if (encrypted.length === 0) return null
+    return safeStorage.decryptString(encrypted)
+  } catch {
+    return null
+  }
+}
+
+function setSecureApiKey(key: string): void {
+  const encrypted = safeStorage.encryptString(key)
+  fs.writeFileSync(API_KEY_FILE, encrypted)
+}
+
+function getMaskedApiKey(): string | null {
+  const key = getSecureApiKey()
+  if (!key) return null
+  if (key.length <= 8) return '••••••••'
+  return key.substring(0, 7) + '...' + key.substring(key.length - 4)
+}
+
+// Sanitize error messages to prevent API key leakage
+function sanitizeError(message: string): string {
+  return message.replace(/sk-ant-[A-Za-z0-9_-]+/g, '[REDACTED]')
+    .replace(/sk-[A-Za-z0-9_-]{20,}/g, '[REDACTED]')
+}
+
+// Validate file paths to prevent directory traversal
+const ALLOWED_DIRS: string[] = []
+function getAllowedDirs(): string[] {
+  if (ALLOWED_DIRS.length === 0) {
+    ALLOWED_DIRS.push(
+      path.resolve(os.tmpdir()),
+      path.resolve(app.getPath('userData')),
+      path.resolve(app.getPath('home'))
+    )
+  }
+  return ALLOWED_DIRS
+}
+
+function validateFilePath(filePath: string): void {
+  const resolved = path.resolve(filePath)
+  const allowed = getAllowedDirs()
+  const isAllowed = allowed.some(dir => resolved.startsWith(dir))
+  if (!isAllowed) {
+    throw new Error('Access to this file path is not permitted')
+  }
+}
+
+// Validate HQ server domain
+function validateHqServer(server: string): void {
+  if (!/^[a-zA-Z0-9.-]+$/.test(server)) {
+    throw new Error('Invalid HQ server: only alphanumeric characters, dots, and hyphens allowed')
+  }
+  if (!server.endsWith('commcarehq.org')) {
+    throw new Error('Invalid HQ server: must be a commcarehq.org domain')
+  }
+}
+
+const MAX_FILE_SIZE = 100 * 1024 * 1024 // 100MB
+
+function checkFileSize(filePath: string): void {
+  const stat = fs.statSync(filePath)
+  if (stat.size > MAX_FILE_SIZE) {
+    throw new Error('File too large (max 100MB)')
+  }
+}
 
 let claudeService: ClaudeService | null = null
 let pendingHistory: Array<{ role: string; content: any }> | null = null
@@ -67,7 +140,7 @@ function stripBase64FromFrontendMessages(messages: any[]): any[] {
 
 function getClaudeService(): ClaudeService {
   if (!claudeService) {
-    const apiKey = store.get('apiKey')
+    const apiKey = getSecureApiKey()
     if (!apiKey) {
       throw new Error('API key not configured. Please set your Anthropic API key in Settings.')
     }
@@ -87,7 +160,7 @@ export function registerIpcHandlers(ipcMain: IpcMain) {
       const response = await service.sendMessage(message, attachments)
       return response
     } catch (error: any) {
-      throw new Error(error.message || 'Failed to send message')
+      throw new Error(sanitizeError(error.message || 'Failed to send message'))
     }
   })
 
@@ -106,7 +179,7 @@ export function registerIpcHandlers(ipcMain: IpcMain) {
 
       return fullResponse
     } catch (error: any) {
-      throw new Error(error.message || 'Failed to stream message')
+      throw new Error(sanitizeError(error.message || 'Failed to stream message'))
     }
   })
 
@@ -132,11 +205,12 @@ export function registerIpcHandlers(ipcMain: IpcMain) {
         errors: result.errors
       }
     } catch (error: any) {
-      throw new Error(error.message || 'Failed to generate app')
+      throw new Error(sanitizeError(error.message || 'Failed to generate app'))
     }
   })
 
   ipcMain.handle('app:download-ccz', async (event, sourcePath: string) => {
+    validateFilePath(sourcePath)
     const window = BrowserWindow.fromWebContents(event.sender)
     if (!window) throw new Error('No window found')
 
@@ -153,6 +227,7 @@ export function registerIpcHandlers(ipcMain: IpcMain) {
   })
 
   ipcMain.handle('app:download-json', async (event, sourcePath: string) => {
+    validateFilePath(sourcePath)
     const window = BrowserWindow.fromWebContents(event.sender)
     if (!window) throw new Error('No window found')
 
@@ -169,16 +244,20 @@ export function registerIpcHandlers(ipcMain: IpcMain) {
   })
 
   ipcMain.handle('app:open-file-location', async (_event, filePath: string) => {
+    validateFilePath(filePath)
     shell.showItemInFolder(filePath)
   })
 
   ipcMain.handle('hq:initiate-import', async (_event, jsonPath: string) => {
+    validateFilePath(jsonPath)
     const hqServer = store.get('hqServer') || 'www.commcarehq.org'
     const hqDomain = store.get('hqDomain')
 
     if (!hqDomain) {
       throw new Error('Please set your CommCare HQ project space domain in Settings first.')
     }
+
+    validateHqServer(hqServer)
 
     const hqImport = new HqImportService()
     return await hqImport.initiateImport(hqServer, hqDomain, jsonPath)
@@ -196,6 +275,7 @@ export function registerIpcHandlers(ipcMain: IpcMain) {
 
     if (result.canceled || result.filePaths.length === 0) return null
 
+    checkFileSize(result.filePaths[0])
     const parser = new CczParser()
     const parsed = parser.parse(result.filePaths[0])
 
@@ -208,6 +288,7 @@ export function registerIpcHandlers(ipcMain: IpcMain) {
   })
 
   ipcMain.handle('app:validate-uploaded', async (event, filePath: string) => {
+    validateFilePath(filePath)
     const window = BrowserWindow.fromWebContents(event.sender)
     if (!window) throw new Error('No window found')
 
@@ -305,6 +386,7 @@ export function registerIpcHandlers(ipcMain: IpcMain) {
     if (result.canceled || result.filePaths.length === 0) return null
 
     const filePath = result.filePaths[0]
+    checkFileSize(filePath)
     const ext = path.extname(filePath).toLowerCase()
     const baseName = path.basename(filePath, ext)
 
@@ -372,29 +454,33 @@ export function registerIpcHandlers(ipcMain: IpcMain) {
   })
 
   ipcMain.handle('settings:get-api-key', async () => {
-    return store.get('apiKey') || null
+    return { hasKey: !!getSecureApiKey(), maskedKey: getMaskedApiKey() }
   })
 
   ipcMain.handle('settings:set-api-key', async (_event, key: string) => {
-    store.set('apiKey', key)
+    if (!key || typeof key !== 'string') throw new Error('Invalid API key')
+    setSecureApiKey(key)
     claudeService = null
   })
 
   ipcMain.handle('settings:get', async () => {
     return {
-      apiKey: store.get('apiKey') || null,
+      hasApiKey: !!getSecureApiKey(),
       hqServer: store.get('hqServer'),
       hqDomain: store.get('hqDomain'),
       model: store.get('model')
     }
   })
 
-  ipcMain.handle('settings:set', async (_event, settings: Partial<AppSettings>) => {
+  ipcMain.handle('settings:set', async (_event, settings: Partial<StoreSettings & { apiKey?: string }>) => {
     if (settings.apiKey !== undefined) {
-      store.set('apiKey', settings.apiKey)
+      setSecureApiKey(settings.apiKey)
       claudeService = null
     }
-    if (settings.hqServer !== undefined) store.set('hqServer', settings.hqServer)
+    if (settings.hqServer !== undefined) {
+      validateHqServer(settings.hqServer)
+      store.set('hqServer', settings.hqServer)
+    }
     if (settings.hqDomain !== undefined) store.set('hqDomain', settings.hqDomain)
     if (settings.model !== undefined) {
       store.set('model', settings.model)

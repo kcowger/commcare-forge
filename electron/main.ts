@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, session } from 'electron'
 import { join } from 'path'
 import electronUpdater from 'electron-updater'
 const { autoUpdater } = electronUpdater
@@ -20,7 +20,7 @@ function createWindow() {
       preload: join(__dirname, '../preload/preload.mjs'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false
+      sandbox: true
     },
     ...(process.platform === 'darwin' ? { titleBarStyle: 'hiddenInset' as const } : {}),
     backgroundColor: '#0a0a0a'
@@ -88,6 +88,18 @@ function setupAutoUpdater() {
 }
 
 app.whenReady().then(() => {
+  // Content Security Policy
+  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [
+          "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src https://api.anthropic.com; img-src 'self' data:"
+        ]
+      }
+    })
+  })
+
   createWindow()
   setupAutoUpdater()
 })

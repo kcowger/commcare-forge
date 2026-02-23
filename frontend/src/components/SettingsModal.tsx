@@ -24,8 +24,8 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   useEffect(() => {
     if (isOpen && window.electronAPI) {
       window.electronAPI.getSettings().then(settings => {
-        setHasKey(!!settings.apiKey)
-        setApiKey(settings.apiKey ? '••••••••••••••••••••' : '')
+        setHasKey(settings.hasApiKey)
+        setApiKey(settings.hasApiKey ? '••••••••••••••••••••' : '')
         setHqServer(settings.hqServer || 'www.commcarehq.org')
         setHqDomain(settings.hqDomain || '')
         setModel(settings.model || 'claude-sonnet-4-5-20250929')

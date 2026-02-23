@@ -81,8 +81,8 @@ export default function App() {
 
   useEffect(() => {
     if (!window.electronAPI) return
-    window.electronAPI.getApiKey().then(async (key) => {
-      if (!key) {
+    window.electronAPI.getApiKey().then(async (result) => {
+      if (!result.hasKey) {
         setApiKeyReady(false)
         return
       }
