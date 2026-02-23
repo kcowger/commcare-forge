@@ -1,8 +1,18 @@
 import { app, BrowserWindow, ipcMain, session } from 'electron'
 import { join } from 'path'
+import { appendFileSync, mkdirSync } from 'fs'
 import electronUpdater from 'electron-updater'
 const { autoUpdater } = electronUpdater
 import { registerIpcHandlers } from './ipc-handlers'
+
+// Diagnostic log file for debugging packaged builds
+const LOG_PATH = join(app.getPath('userData'), 'debug.log')
+function debugLog(msg: string) {
+  try {
+    mkdirSync(app.getPath('userData'), { recursive: true })
+    appendFileSync(LOG_PATH, `[${new Date().toISOString()}] ${msg}\n`)
+  } catch { /* ignore */ }
+}
 
 let mainWindow: BrowserWindow | null = null
 
@@ -17,7 +27,7 @@ function createWindow() {
       ? join(process.resourcesPath, process.platform === 'win32' ? 'icon.ico' : 'icon.png')
       : join(__dirname, '../../build/resources', process.platform === 'win32' ? 'icon.ico' : 'icon.png'),
     webPreferences: {
-      preload: join(__dirname, '../preload/preload.mjs'),
+      preload: join(__dirname, '../preload/preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true
@@ -26,18 +36,44 @@ function createWindow() {
     backgroundColor: '#0a0a0a'
   })
 
-  registerIpcHandlers(ipcMain)
+  debugLog('Registering IPC handlers...')
+  try {
+    registerIpcHandlers(ipcMain)
+    debugLog('IPC handlers registered successfully')
+  } catch (err: any) {
+    debugLog(`IPC handler registration FAILED: ${err.message}\n${err.stack}`)
+  }
 
   if (process.env.NODE_ENV === 'development' || process.env.ELECTRON_RENDERER_URL) {
     const url = process.env.ELECTRON_RENDERER_URL || 'http://localhost:5173'
     mainWindow.loadURL(url)
   } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    const htmlPath = join(__dirname, '../renderer/index.html')
+    debugLog(`Loading renderer from: ${htmlPath}`)
+    mainWindow.loadFile(htmlPath)
     // Disable DevTools in production to prevent data inspection
     mainWindow.webContents.on('devtools-opened', () => {
       mainWindow?.webContents.closeDevTools()
     })
   }
+
+  mainWindow.webContents.on('did-fail-load', (_e, code, desc) => {
+    debugLog(`Renderer FAILED to load: ${code} ${desc}`)
+  })
+  mainWindow.webContents.on('did-finish-load', () => {
+    debugLog('Renderer loaded successfully')
+  })
+
+  // Capture renderer errors for debugging
+  mainWindow.webContents.on('console-message', (_e, level, message, line, sourceId) => {
+    // Only log errors (level 3 = error) to avoid filling the debug log
+    if (level >= 3) {
+      debugLog(`[RENDERER ERROR] line=${line} src=${sourceId} msg=${message}`)
+    }
+  })
+  mainWindow.webContents.on('preload-error' as any, (_e: any, preloadPath: string, error: Error) => {
+    debugLog(`[PRELOAD ERROR] path=${preloadPath} error=${error.message}`)
+  })
 
   mainWindow.on('closed', () => {
     mainWindow = null
@@ -92,17 +128,20 @@ function setupAutoUpdater() {
 }
 
 app.whenReady().then(() => {
-  // Content Security Policy
-  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-    callback({
-      responseHeaders: {
-        ...details.responseHeaders,
-        'Content-Security-Policy': [
-          "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src https://api.anthropic.com; img-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'"
-        ]
-      }
-    })
-  })
+  // Content Security Policy — only for HTTPS responses (file:// doesn't use HTTP headers)
+  session.defaultSession.webRequest.onHeadersReceived(
+    { urls: ['https://*/*', 'http://*/*'] },
+    (details, callback) => {
+      callback({
+        responseHeaders: {
+          ...details.responseHeaders,
+          'Content-Security-Policy': [
+            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src https://api.anthropic.com; img-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'"
+          ]
+        }
+      })
+    }
+  )
 
   createWindow()
   setupAutoUpdater()

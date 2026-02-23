@@ -80,32 +80,54 @@ export default function App() {
   // --- Initialization ---
 
   useEffect(() => {
-    if (!window.electronAPI) return
+    if (!window.electronAPI) {
+      // No preload — show welcome screen so user isn't stuck on blank
+      setApiKeyReady(false)
+      return
+    }
+
+    // Timeout: if IPC doesn't respond in 5s, show welcome screen
+    const timeout = setTimeout(() => {
+      if (apiKeyReady === null) setApiKeyReady(false)
+    }, 5000)
+
     window.electronAPI.getApiKey().then(async (result) => {
+      clearTimeout(timeout)
       if (!result.hasKey) {
         setApiKeyReady(false)
         return
       }
       setApiKeyReady(true)
       // Load saved conversations
-      const saved = await window.electronAPI.loadConversations()
-      if (saved && saved.conversations.length > 0) {
-        setConversations(saved.conversations)
-        const activeId = saved.activeId || saved.conversations[0].id
-        setActiveConversationId(activeId)
-        const active = saved.conversations.find(c => c.id === activeId) || saved.conversations[0]
-        restoreState(active.messages, active.architectureSpec)
-        setPanelMode((active.panelMode as PanelMode) || 'chat')
-        setUploadedFilePath(active.uploadedFilePath)
-        setUploadedAppName(active.uploadedAppName)
-        setGenerationProgress(active.generationProgress)
-        setGenerationResult(active.generationResult)
-        setHqImportResult(active.hqImportResult)
-      } else {
+      try {
+        const saved = await window.electronAPI.loadConversations()
+        if (saved && saved.conversations.length > 0) {
+          setConversations(saved.conversations)
+          const activeId = saved.activeId || saved.conversations[0].id
+          setActiveConversationId(activeId)
+          const active = saved.conversations.find(c => c.id === activeId) || saved.conversations[0]
+          restoreState(active.messages, active.architectureSpec)
+          setPanelMode((active.panelMode as PanelMode) || 'chat')
+          setUploadedFilePath(active.uploadedFilePath)
+          setUploadedAppName(active.uploadedAppName)
+          setGenerationProgress(active.generationProgress)
+          setGenerationResult(active.generationResult)
+          setHqImportResult(active.hqImportResult)
+        } else {
+          const fresh = createEmptyConversation()
+          setConversations([fresh])
+          setActiveConversationId(fresh.id)
+        }
+      } catch {
+        // Conversations failed to load — start fresh
         const fresh = createEmptyConversation()
         setConversations([fresh])
         setActiveConversationId(fresh.id)
       }
+    }).catch(() => {
+      clearTimeout(timeout)
+      // IPC failed — show welcome screen instead of blank
+      setApiKeyReady(false)
     })
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 

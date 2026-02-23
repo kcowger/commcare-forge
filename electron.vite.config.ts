@@ -26,8 +26,13 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin()],
     build: {
       outDir: 'out/preload',
+      // Must output CommonJS — Electron sandbox preload doesn't support ESM imports
       rollupOptions: {
-        input: resolve(__dirname, 'electron/preload.ts')
+        input: resolve(__dirname, 'electron/preload.ts'),
+        output: {
+          format: 'cjs',
+          entryFileNames: 'preload.js'
+        }
       }
     }
   },
