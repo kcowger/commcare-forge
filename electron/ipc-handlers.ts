@@ -110,8 +110,8 @@ function validateHqServer(server: string): void {
 
 // Validate HQ domain (project space name)
 function validateHqDomain(domain: string): void {
-  if (domain && !/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(domain)) {
-    throw new Error('Invalid project space domain: only alphanumeric characters, hyphens, and underscores allowed')
+  if (domain && !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(domain)) {
+    throw new Error('Invalid project space domain')
   }
 }
 
