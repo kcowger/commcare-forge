@@ -21,14 +21,9 @@ jobs:
 
       - run: npm ci
 
-      - run: npx electron-vite build && npx electron-builder --win --publish never
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: windows-installer
-          path: |
-            dist/*.exe
-            dist/latest.yml
+      - run: npx electron-vite build && npx electron-builder --win --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build-mac:
     runs-on: macos-latest
@@ -42,14 +37,9 @@ jobs:
 
       - run: npm ci
 
-      - run: npx electron-vite build && npx electron-builder --mac --publish never
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: mac-installer
-          path: |
-            dist/*.dmg
-            dist/latest-mac.yml
+      - run: npx electron-vite build && npx electron-builder --mac --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build-linux:
     runs-on: ubuntu-latest
@@ -63,31 +53,6 @@ jobs:
 
       - run: npm ci
 
-      - run: npx electron-vite build && npx electron-builder --linux --publish never
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: linux-installer
-          path: |
-            dist/*.AppImage
-            dist/latest-linux.yml
-
-  publish:
-    needs: [build-windows, build-mac, build-linux]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-
-      - name: Upload to release
-        uses: softprops/action-gh-release@v2
-        with:
-          generate_release_notes: true
-          files: |
-            artifacts/windows-installer/*.exe
-            artifacts/windows-installer/*.yml
-            artifacts/mac-installer/*.dmg
-            artifacts/mac-installer/*.yml
-            artifacts/linux-installer/*.AppImage
-            artifacts/linux-installer/*.yml
+      - run: npx electron-vite build && npx electron-builder --linux --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

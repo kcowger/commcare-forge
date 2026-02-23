@@ -152,6 +152,11 @@ const api: ElectronAPI = {
     ipcRenderer.on('update:downloaded', handler)
     return () => ipcRenderer.removeListener('update:downloaded', handler)
   },
+  onUpdateError: (callback: (message: string) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, message: string) => callback(message)
+    ipcRenderer.on('update:error', handler)
+    return () => ipcRenderer.removeListener('update:error', handler)
+  },
   // Conversation persistence
   saveConversations: (data: { conversations: any[]; activeId: string }) => {
     return ipcRenderer.invoke('conversations:save', data)

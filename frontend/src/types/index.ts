@@ -88,6 +88,7 @@ export interface ElectronAPI {
   onUpdateAvailable: (callback: (version: string) => void) => () => void
   onUpdateDownloadProgress: (callback: (percent: number) => void) => () => void
   onUpdateDownloaded: (callback: () => void) => () => void
+  onUpdateError: (callback: (message: string) => void) => () => void
   saveConversations: (data: { conversations: any[]; activeId: string }) => Promise<void>
   loadConversations: () => Promise<{ conversations: any[]; activeId: string } | null>
   switchBackendConversation: (backendHistory: any[]) => Promise<void>

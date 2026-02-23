@@ -71,6 +71,7 @@ export default function App() {
   const [updateDownloadPercent, setUpdateDownloadPercent] = useState(0)
   const [updateReady, setUpdateReady] = useState(false)
   const [updateDismissed, setUpdateDismissed] = useState(false)
+  const [updateError, setUpdateError] = useState<string | null>(null)
 
   // Keep refs in sync
   useEffect(() => { conversationsRef.current = conversations }, [conversations])
@@ -121,8 +122,9 @@ export default function App() {
     if (!window.electronAPI) return
     const cleanups = [
       window.electronAPI.onUpdateAvailable((version) => setUpdateAvailable(version)),
-      window.electronAPI.onUpdateDownloadProgress((percent) => setUpdateDownloadPercent(percent)),
-      window.electronAPI.onUpdateDownloaded(() => { setUpdateDownloading(false); setUpdateReady(true) })
+      window.electronAPI.onUpdateDownloadProgress((percent) => { setUpdateDownloadPercent(percent); setUpdateError(null) }),
+      window.electronAPI.onUpdateDownloaded(() => { setUpdateDownloading(false); setUpdateReady(true) }),
+      window.electronAPI.onUpdateError((message) => { setUpdateDownloading(false); setUpdateError(message) })
     ]
     return () => cleanups.forEach(fn => fn())
   }, [])
@@ -445,12 +447,27 @@ export default function App() {
                   />
                 </div>
               </>
+            ) : updateError ? (
+              <>
+                <span className="text-red-400/80">Update failed: {updateError.substring(0, 100)}</span>
+                <button
+                  onClick={() => {
+                    setUpdateError(null)
+                    setUpdateDownloading(true)
+                    window.electronAPI?.downloadUpdate()
+                  }}
+                  className="px-3 py-1 rounded-md bg-accent hover:bg-accent-light text-white text-xs font-medium transition-colors"
+                >
+                  Retry
+                </button>
+              </>
             ) : (
               <>
                 <span className="text-white/80">A new version (v{updateAvailable}) is available</span>
                 <button
                   onClick={() => {
                     setUpdateDownloading(true)
+                    setUpdateError(null)
                     window.electronAPI?.downloadUpdate()
                   }}
                   className="px-3 py-1 rounded-md bg-accent hover:bg-accent-light text-white text-xs font-medium transition-colors"
