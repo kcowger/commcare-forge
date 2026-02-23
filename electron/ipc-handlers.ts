@@ -17,13 +17,30 @@ import path from 'path'
 import os from 'os'
 
 // Non-sensitive settings — no encryption needed
-const store = new Store<StoreSettings>({
-  defaults: {
-    hqServer: 'www.commcarehq.org',
-    hqDomain: '',
-    model: 'claude-sonnet-4-5-20250929'
-  }
-})
+// Wrap in try/catch to handle migration from old encrypted store
+let store: Store<StoreSettings>
+try {
+  store = new Store<StoreSettings>({
+    defaults: {
+      hqServer: 'www.commcarehq.org',
+      hqDomain: '',
+      model: 'claude-sonnet-4-5-20250929'
+    }
+  })
+  // Force a read to trigger deserialization errors early
+  store.get('hqServer')
+} catch {
+  // Old store was encrypted with a hardcoded key — wipe and start fresh
+  const storePath = path.join(app.getPath('userData'), 'config.json')
+  try { fs.unlinkSync(storePath) } catch { /* file may not exist */ }
+  store = new Store<StoreSettings>({
+    defaults: {
+      hqServer: 'www.commcarehq.org',
+      hqDomain: '',
+      model: 'claude-sonnet-4-5-20250929'
+    }
+  })
+}
 
 // Secure API key storage using OS-level encryption (DPAPI/Keychain/libsecret)
 const API_KEY_FILE = path.join(app.getPath('userData'), '.api-key')
