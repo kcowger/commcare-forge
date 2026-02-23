@@ -31,7 +31,6 @@ mac:
   darkModeSupport: true
 
 win:
-  artifactName: commcare-forge-${version}-setup.${ext}
   target:
     - target: nsis
       arch:
@@ -40,6 +39,7 @@ win:
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
+  artifactName: commcare-forge-${version}-setup.${ext}
 
 linux:
   artifactName: commcare-forge-${version}.${ext}
