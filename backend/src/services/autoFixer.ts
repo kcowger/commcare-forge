@@ -348,17 +348,19 @@ export class AutoFixer {
     if (!(/nodeset="\/data\/case\/create\/case_type"\s+calculate=/.test(xml))) {
       // Try to infer case type from context
       const caseType = this.inferCaseType(xml) || 'case'
-      const bind = `\n      <bind nodeset="/data/case/create/case_type" calculate="'${caseType}'"/>`
-      result = this.insertBindBefore(result, bind)
-      applied.push(`${path}: Added missing case_type calculate bind`)
-      changed = true
+      if (this.isValidCaseType(caseType)) {
+        const bind = `\n      <bind nodeset="/data/case/create/case_type" calculate="'${caseType}'"/>`
+        result = this.insertBindBefore(result, bind)
+        applied.push(`${path}: Added missing case_type calculate bind`)
+        changed = true
+      }
     }
 
     // Check for missing case_name bind
     if (!(/nodeset="\/data\/case\/create\/case_name"\s+calculate=/.test(xml))) {
       // Use the first question as case name
       const firstQuestion = this.findFirstQuestion(xml)
-      if (firstQuestion) {
+      if (firstQuestion && this.isValidPropertyName(firstQuestion)) {
         const bind = `\n      <bind nodeset="/data/case/create/case_name" calculate="/data/${firstQuestion}"/>`
         result = this.insertBindBefore(result, bind)
         applied.push(`${path}: Added missing case_name calculate bind (using /data/${firstQuestion})`)
@@ -395,6 +397,7 @@ export class AutoFixer {
         const prop = tagMatch[1]
         if (prop === 'update') continue
 
+        if (!this.isValidPropertyName(prop)) continue
         const bindPattern = new RegExp(`nodeset="/data/case/update/${prop}"\\s+calculate=`)
         if (!bindPattern.test(result)) {
           // Try to find a matching question in the instance data
@@ -450,6 +453,21 @@ export class AutoFixer {
 
   private escapeRegex(str: string): string {
     return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  }
+
+  /** Check if a string is a valid CommCare case type identifier */
+  private isValidCaseType(ct: string): boolean {
+    return /^[a-zA-Z][a-zA-Z0-9_-]*$/.test(ct)
+  }
+
+  /** Check if a string is a valid XForm data path */
+  private isValidXFormPath(p: string): boolean {
+    return /^\/data\/[a-zA-Z0-9_/]+$/.test(p)
+  }
+
+  /** Check if a string is a valid XML element / case property name */
+  private isValidPropertyName(name: string): boolean {
+    return /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)
   }
 
   private escapeXml(str: string): string {
