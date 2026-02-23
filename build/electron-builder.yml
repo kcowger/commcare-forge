@@ -27,7 +27,7 @@ mac:
   target:
     - target: dmg
       arch:
-        - universal
+        - arm64
   darkModeSupport: true
 
 win:

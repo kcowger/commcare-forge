@@ -59,11 +59,19 @@ jobs:
 
       - run: npx electron-vite build && npx electron-builder --mac --publish never
 
+      - name: Debug mac dist
+        run: |
+          echo "=== Files in dist ==="
+          ls -la dist/
+          echo "=== latest-mac.yml ==="
+          cat dist/latest-mac.yml
+
       - uses: actions/upload-artifact@v4
         with:
           name: mac-installer
           path: |
             dist/*.dmg
+            dist/*.zip
             dist/latest-mac.yml
 
   build-linux:
@@ -97,9 +105,17 @@ jobs:
 
       - name: Debug artifacts
         run: |
+          echo "=== All artifact files ==="
           find artifacts -type f | sort
-          echo "---"
+          echo ""
+          echo "=== latest.yml (Windows) ==="
           cat artifacts/windows-installer/latest.yml
+          echo ""
+          echo "=== latest-mac.yml ==="
+          cat artifacts/mac-installer/latest-mac.yml
+          echo ""
+          echo "=== latest-linux.yml ==="
+          cat artifacts/linux-installer/latest-linux.yml
 
       - name: Upload to release
         uses: softprops/action-gh-release@v2
@@ -108,6 +124,7 @@ jobs:
             artifacts/windows-installer/*.exe
             artifacts/windows-installer/latest.yml
             artifacts/mac-installer/*.dmg
+            artifacts/mac-installer/*.zip
             artifacts/mac-installer/latest-mac.yml
             artifacts/linux-installer/*.AppImage
             artifacts/linux-installer/latest-linux.yml
