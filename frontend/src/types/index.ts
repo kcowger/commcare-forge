@@ -16,9 +16,28 @@ export interface ChatMessage {
 
 export interface AppSettings {
   hasApiKey: boolean
+  hasHqCredentials: boolean
+  hqUsername: string
   hqServer: string
   hqDomain: string
   model: string
+}
+
+export interface HqAppSummary {
+  app_id: string
+  name: string
+}
+
+export interface HqAppListResult {
+  apps: HqAppSummary[]
+  totalCount: number
+}
+
+export interface HqFetchResult {
+  appName: string
+  appId: string
+  markdownSummary: string
+  hqJson: Record<string, any>
 }
 
 export interface GenerationProgress {
@@ -83,6 +102,9 @@ export interface ElectronAPI {
   uploadAndParse: () => Promise<CczParseResult | null>
   validateUploaded: (filePath: string) => Promise<GenerationResult>
   injectChatContext: (userMessage: string, assistantMessage: string) => Promise<void>
+  setHqCredentials: (username: string, apiKey: string) => Promise<void>
+  listHqApps: () => Promise<HqAppListResult>
+  fetchHqApp: (appId: string) => Promise<HqFetchResult>
   downloadUpdate: () => Promise<void>
   installUpdate: () => Promise<void>
   onUpdateAvailable: (callback: (version: string) => void) => () => void

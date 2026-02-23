@@ -1,53 +1,40 @@
 #!/bin/bash
-# Builds commcare-cli.jar from the commcare-core source
-# Requires: Java 17+, Git
+# Downloads commcare-cli.jar from the official commcare-core GitHub releases
 set -e
 
 OUTPUT_DIR="lib"
 OUTPUT_FILE="$OUTPUT_DIR/commcare-cli.jar"
-CLONE_DIR=$(mktemp -d)
+REPO="dimagi/commcare-core"
 
 mkdir -p "$OUTPUT_DIR"
 
-# Check prerequisites
-if ! command -v java &> /dev/null; then
-  echo "ERROR: Java is not installed. Install Java 17+ first."
-  echo "  macOS:   brew install openjdk@17"
-  echo "  Windows: winget install EclipseAdoptium.Temurin.17.JDK"
-  echo "  Linux:   sudo apt install openjdk-17-jdk"
+# Get the latest release tag
+echo "Fetching latest commcare-core release..."
+TAG=$(gh release list --repo "$REPO" --limit 1 --json tagName --jq '.[0].tagName' 2>/dev/null)
+
+if [ -z "$TAG" ]; then
+  echo "ERROR: Could not determine latest release. Make sure 'gh' CLI is installed and authenticated."
   exit 1
 fi
 
-if ! command -v git &> /dev/null; then
-  echo "ERROR: Git is not installed."
-  exit 1
-fi
+echo "Latest release: $TAG"
+DOWNLOAD_URL="https://github.com/$REPO/releases/download/$TAG/commcare-cli.jar"
 
-echo "Cloning commcare-core (this may take a few minutes)..."
-git clone --depth 1 https://github.com/dimagi/commcare-core.git "$CLONE_DIR/commcare-core"
-
-echo "Building commcare-cli.jar..."
-cd "$CLONE_DIR/commcare-core"
-
-if [ -f "gradlew" ]; then
-  chmod +x gradlew
-  ./gradlew cliJar
+echo "Downloading commcare-cli.jar..."
+if command -v curl &> /dev/null; then
+  curl -L -o "$OUTPUT_FILE" "$DOWNLOAD_URL"
+elif command -v wget &> /dev/null; then
+  wget -O "$OUTPUT_FILE" "$DOWNLOAD_URL"
 else
-  gradle cliJar
-fi
-
-# Find the built JAR
-BUILT_JAR=$(find "$CLONE_DIR/commcare-core" -name "commcare-cli*.jar" -path "*/build/libs/*" | head -1)
-
-if [ -z "$BUILT_JAR" ]; then
-  echo "ERROR: Build succeeded but commcare-cli.jar not found in build output."
-  echo "Check $CLONE_DIR/commcare-core/build/libs/ manually."
+  echo "ERROR: Neither curl nor wget found."
   exit 1
 fi
 
-cd - > /dev/null
-cp "$BUILT_JAR" "$OUTPUT_FILE"
-rm -rf "$CLONE_DIR"
+if [ ! -f "$OUTPUT_FILE" ] || [ ! -s "$OUTPUT_FILE" ]; then
+  echo "ERROR: Download failed or file is empty."
+  rm -f "$OUTPUT_FILE"
+  exit 1
+fi
 
-echo "Built and copied to: $OUTPUT_FILE"
+echo "Downloaded to: $OUTPUT_FILE"
 echo "Done!"

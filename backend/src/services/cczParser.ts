@@ -31,7 +31,8 @@ export class CczParser {
     for (const entry of entries) {
       if (entry.isDirectory) continue
       // Zip slip prevention: reject entries with path traversal
-      if (entry.entryName.includes('..') || path.isAbsolute(entry.entryName)) continue
+      const normalized = path.normalize(entry.entryName)
+      if (normalized.includes('..') || path.isAbsolute(normalized) || normalized.startsWith('/') || normalized.startsWith('\\')) continue
       const ext = path.extname(entry.entryName).toLowerCase()
       if (TEXT_EXTENSIONS.has(ext) || entry.entryName.includes('app_strings')) {
         files[entry.entryName] = entry.getData().toString('utf-8')

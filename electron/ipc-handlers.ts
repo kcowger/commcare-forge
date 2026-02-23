@@ -10,6 +10,8 @@ import { HqValidator } from '@backend/services/hqValidator'
 import { CczParser } from '@backend/services/cczParser'
 import { AutoFixer } from '@backend/services/autoFixer'
 import { CczBuilder } from '@backend/services/cczBuilder'
+import { HqApiClient } from '@backend/services/hqApiClient'
+import { CliJarUpdater } from '@backend/services/cliJarUpdater'
 import type { FileAttachment, StoreSettings } from './preload'
 import Store from 'electron-store'
 import fs from 'fs'
@@ -21,7 +23,8 @@ import os from 'os'
 const STORE_DEFAULTS: StoreSettings = {
   hqServer: 'www.commcarehq.org',
   hqDomain: '',
-  model: 'claude-sonnet-4-5-20250929'
+  model: 'claude-sonnet-4-5-20250929',
+  cliJarVersion: ''
 }
 
 let store: Store<StoreSettings>
@@ -63,10 +66,51 @@ function getMaskedApiKey(): string | null {
   return key.substring(0, 7) + '...' + key.substring(key.length - 4)
 }
 
-// Sanitize error messages to prevent API key leakage
+// Secure HQ API credential storage (same pattern as Anthropic key)
+const HQ_USERNAME_FILE = path.join(app.getPath('userData'), '.hq-username')
+const HQ_API_KEY_FILE = path.join(app.getPath('userData'), '.hq-api-key')
+
+function getSecureHqCredentials(): { username: string; apiKey: string } | null {
+  try {
+    if (!fs.existsSync(HQ_USERNAME_FILE) || !fs.existsSync(HQ_API_KEY_FILE)) return null
+    const encUser = fs.readFileSync(HQ_USERNAME_FILE)
+    const encKey = fs.readFileSync(HQ_API_KEY_FILE)
+    if (encUser.length === 0 || encKey.length === 0) return null
+    return {
+      username: safeStorage.decryptString(encUser),
+      apiKey: safeStorage.decryptString(encKey)
+    }
+  } catch {
+    return null
+  }
+}
+
+function setSecureHqCredentials(username: string, apiKey: string): void {
+  fs.writeFileSync(HQ_USERNAME_FILE, safeStorage.encryptString(username))
+  fs.writeFileSync(HQ_API_KEY_FILE, safeStorage.encryptString(apiKey))
+}
+
+function getMaskedHqUsername(): string | null {
+  const creds = getSecureHqCredentials()
+  if (!creds) return null
+  const u = creds.username
+  if (u.length <= 4) return '••••'
+  const atIdx = u.indexOf('@')
+  if (atIdx > 1) {
+    return u[0] + '•••' + u.substring(atIdx)
+  }
+  return u[0] + '•••' + u.substring(u.length - 2)
+}
+
+// Sanitize error messages to prevent API key and path leakage
 function sanitizeError(message: string): string {
-  return message.replace(/sk-ant-[A-Za-z0-9_-]+/g, '[REDACTED]')
+  return message
+    .replace(/sk-ant-[A-Za-z0-9_-]+/g, '[REDACTED]')
     .replace(/sk-[A-Za-z0-9_-]{20,}/g, '[REDACTED]')
+    // Redact Windows paths (C:\Users\..., D:\...)
+    .replace(/[A-Z]:\\[^\s"',)]+/gi, '[PATH]')
+    // Redact Unix paths (/home/..., /tmp/...)
+    .replace(/\/(?:home|tmp|var|Users|etc)\/[^\s"',)]+/g, '[PATH]')
 }
 
 // Validate file paths to prevent directory traversal
@@ -76,7 +120,9 @@ function getAllowedDirs(): string[] {
     ALLOWED_DIRS.push(
       path.resolve(os.tmpdir()),
       path.resolve(app.getPath('userData')),
-      path.resolve(app.getPath('home'))
+      path.resolve(app.getPath('documents')),
+      path.resolve(app.getPath('downloads')),
+      path.resolve(app.getPath('desktop'))
     )
   }
   return ALLOWED_DIRS
@@ -126,8 +172,12 @@ const ALLOWED_MODELS = new Set([
 const MAX_FILE_SIZE = 100 * 1024 * 1024 // 100MB
 
 function checkFileSize(filePath: string): void {
-  const stat = fs.statSync(filePath)
-  if (stat.size > MAX_FILE_SIZE) {
+  // Use lstatSync to detect symlinks — don't follow them
+  const lstat = fs.lstatSync(filePath)
+  if (lstat.isSymbolicLink()) {
+    throw new Error('Symbolic links are not supported')
+  }
+  if (lstat.size > MAX_FILE_SIZE) {
     throw new Error('File too large (max 100MB)')
   }
 }
@@ -360,7 +410,7 @@ export function registerIpcHandlers(ipcMain: IpcMain) {
     }
 
     // Run CLI validation on the (possibly rebuilt) CCZ
-    const validator = new CliValidator()
+    const validator = new CliValidator(app.getPath('userData'))
     const validation = await validator.validate(validationPath)
 
     // Run HQ validation on the (possibly fixed) files
@@ -434,7 +484,7 @@ export function registerIpcHandlers(ipcMain: IpcMain) {
     if (ext === '.ccz') {
       sendProgress({ status: 'validating', message: `Validating ${path.basename(filePath)}...`, attempt: 1 })
 
-      const validator = new CliValidator()
+      const validator = new CliValidator(app.getPath('userData'))
       const validation = await validator.validate(filePath)
 
       if (validation.skipped) {
@@ -493,14 +543,16 @@ export function registerIpcHandlers(ipcMain: IpcMain) {
   })
 
   ipcMain.handle('settings:set-api-key', async (_event, key: string) => {
-    if (!key || typeof key !== 'string') throw new Error('Invalid API key')
-    setSecureApiKey(key)
+    if (typeof key !== 'string' || !key.trim() || key.length > 512) throw new Error('Invalid API key')
+    setSecureApiKey(key.trim())
     claudeService = null
   })
 
   ipcMain.handle('settings:get', async () => {
     return {
       hasApiKey: !!getSecureApiKey(),
+      hasHqCredentials: !!getSecureHqCredentials(),
+      hqUsername: getMaskedHqUsername() || '',
       hqServer: store.get('hqServer'),
       hqDomain: store.get('hqDomain'),
       model: store.get('model')
@@ -521,12 +573,61 @@ export function registerIpcHandlers(ipcMain: IpcMain) {
       store.set('hqDomain', settings.hqDomain)
     }
     if (settings.model !== undefined) {
-      if (!ALLOWED_MODELS.has(settings.model)) {
+      if (typeof settings.model !== 'string' || !ALLOWED_MODELS.has(settings.model)) {
         throw new Error('Invalid model selected')
       }
       store.set('model', settings.model)
       claudeService = null
     }
+  })
+
+  // HQ API handlers
+  ipcMain.handle('hq:set-credentials', async (_event, username: string, apiKey: string) => {
+    if (typeof username !== 'string' || typeof apiKey !== 'string') {
+      throw new Error('Invalid credentials')
+    }
+    const trimmedUser = username.trim()
+    const trimmedKey = apiKey.trim()
+    if (!trimmedUser || trimmedUser.length > 255) throw new Error('Invalid username')
+    if (!trimmedKey || trimmedKey.length > 255) throw new Error('Invalid API key')
+    if (/[\x00-\x1f]/.test(trimmedUser) || /[\x00-\x1f]/.test(trimmedKey)) {
+      throw new Error('Credentials contain invalid characters')
+    }
+    setSecureHqCredentials(trimmedUser, trimmedKey)
+  })
+
+  ipcMain.handle('hq:list-apps', async () => {
+    const hqServer = store.get('hqServer') || 'www.commcarehq.org'
+    const hqDomain = store.get('hqDomain')
+    if (!hqDomain) throw new Error('Please set your project space domain in Settings first.')
+
+    validateHqServer(hqServer)
+    validateHqDomain(hqDomain)
+
+    const creds = getSecureHqCredentials()
+    if (!creds) throw new Error('CommCare HQ API credentials not configured. Set them in Settings.')
+
+    const client = new HqApiClient(hqServer, hqDomain, creds.username, creds.apiKey)
+    return await client.listApps()
+  })
+
+  ipcMain.handle('hq:fetch-app', async (_event, appId: string) => {
+    if (typeof appId !== 'string' || !appId || appId.length > 64 || !/^[a-f0-9]+$/i.test(appId)) {
+      throw new Error('Invalid app ID')
+    }
+
+    const hqServer = store.get('hqServer') || 'www.commcarehq.org'
+    const hqDomain = store.get('hqDomain')
+    if (!hqDomain) throw new Error('Please set your project space domain in Settings first.')
+
+    validateHqServer(hqServer)
+    validateHqDomain(hqDomain)
+
+    const creds = getSecureHqCredentials()
+    if (!creds) throw new Error('CommCare HQ API credentials not configured.')
+
+    const client = new HqApiClient(hqServer, hqDomain, creds.username, creds.apiKey)
+    return await client.getApp(appId)
   })
 
   // Auto-update handlers
@@ -607,4 +708,15 @@ export function registerIpcHandlers(ipcMain: IpcMain) {
     }
     pendingHistory = null
   })
+
+  // Background CLI jar update check
+  setTimeout(() => {
+    const jarDir = path.join(app.getPath('userData'), 'lib')
+    const updater = new CliJarUpdater(
+      jarDir,
+      () => store.get('cliJarVersion') || '',
+      (v: string) => store.set('cliJarVersion', v)
+    )
+    updater.checkAndUpdate().catch(() => {})
+  }, 5000)
 }

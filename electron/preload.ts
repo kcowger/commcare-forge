@@ -9,9 +9,28 @@ export interface FileAttachment {
 
 export interface AppSettings {
   hasApiKey: boolean
+  hasHqCredentials: boolean
+  hqUsername: string
   hqServer: string
   hqDomain: string
   model: string
+}
+
+export interface HqAppSummary {
+  app_id: string
+  name: string
+}
+
+export interface HqAppListResult {
+  apps: HqAppSummary[]
+  totalCount: number
+}
+
+export interface HqFetchResult {
+  appName: string
+  appId: string
+  markdownSummary: string
+  hqJson: Record<string, any>
 }
 
 // Internal store type (API key stored separately via safeStorage)
@@ -19,6 +38,7 @@ export interface StoreSettings {
   hqServer: string
   hqDomain: string
   model: string
+  cliJarVersion: string
 }
 
 export interface GenerationProgress {
@@ -67,6 +87,10 @@ export type ElectronAPI = {
   uploadAndParse: () => Promise<CczParseResult | null>
   validateUploaded: (filePath: string) => Promise<GenerationResult>
   injectChatContext: (userMessage: string, assistantMessage: string) => Promise<void>
+  // HQ API
+  setHqCredentials: (username: string, apiKey: string) => Promise<void>
+  listHqApps: () => Promise<HqAppListResult>
+  fetchHqApp: (appId: string) => Promise<HqFetchResult>
   // Auto-update
   downloadUpdate: () => Promise<void>
   installUpdate: () => Promise<void>
@@ -136,6 +160,16 @@ const api: ElectronAPI = {
   },
   injectChatContext: (userMessage: string, assistantMessage: string) => {
     return ipcRenderer.invoke('chat:inject-context', userMessage, assistantMessage)
+  },
+  // HQ API
+  setHqCredentials: (username: string, apiKey: string) => {
+    return ipcRenderer.invoke('hq:set-credentials', username, apiKey)
+  },
+  listHqApps: () => {
+    return ipcRenderer.invoke('hq:list-apps')
+  },
+  fetchHqApp: (appId: string) => {
+    return ipcRenderer.invoke('hq:fetch-app', appId)
   },
   // Auto-update
   downloadUpdate: () => {

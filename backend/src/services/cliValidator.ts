@@ -1,5 +1,5 @@
 import { spawn } from 'child_process'
-import { join } from 'path'
+import { join, dirname } from 'path'
 import { existsSync } from 'fs'
 import type { ValidationResult } from '../types'
 
@@ -34,11 +34,34 @@ function findJava(): string | null {
   return 'java'
 }
 
+function findJarPath(userDataDir?: string): string {
+  // 1. Auto-updated jar in userData (highest priority — latest version)
+  if (userDataDir) {
+    const updated = join(userDataDir, 'lib', 'commcare-cli.jar')
+    if (existsSync(updated)) return updated
+  }
+
+  // 2. Packaged app: resources/lib/commcare-cli.jar (bundled fallback)
+  if (process.resourcesPath) {
+    const packaged = join(process.resourcesPath, 'lib', 'commcare-cli.jar')
+    if (existsSync(packaged)) return packaged
+  }
+
+  // 3. Dev mode: lib/commcare-cli.jar at project root (two levels up from out/main/)
+  const devPath = join(__dirname, '../../lib/commcare-cli.jar')
+  return devPath
+}
+
 export class CliValidator {
   private jarPath: string
 
-  constructor(jarPath?: string) {
-    this.jarPath = jarPath || join(__dirname, '../../lib/commcare-cli.jar')
+  constructor(jarPathOrUserDataDir?: string) {
+    // If the path ends with .jar, treat it as an explicit jar path; otherwise treat as userDataDir
+    if (jarPathOrUserDataDir?.endsWith('.jar')) {
+      this.jarPath = jarPathOrUserDataDir
+    } else {
+      this.jarPath = findJarPath(jarPathOrUserDataDir)
+    }
   }
 
   async validate(cczPath: string): Promise<ValidationResult> {

@@ -16,6 +16,8 @@ extraResources:
     to: icon.png
   - from: build/resources/icon.ico
     to: icon.ico
+  - from: lib
+    to: lib
 
 files:
   - out/**/*

@@ -18,8 +18,11 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const [hqServer, setHqServer] = useState('www.commcarehq.org')
   const [hqDomain, setHqDomain] = useState('')
   const [model, setModel] = useState('claude-sonnet-4-5-20250929')
+  const [hqUsername, setHqUsername] = useState('')
+  const [hqApiKey, setHqApiKey] = useState('')
   const [saving, setSaving] = useState(false)
   const [hasKey, setHasKey] = useState(false)
+  const [hasHqCreds, setHasHqCreds] = useState(false)
 
   useEffect(() => {
     if (isOpen && window.electronAPI) {
@@ -29,6 +32,9 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
         setHqServer(settings.hqServer || 'www.commcarehq.org')
         setHqDomain(settings.hqDomain || '')
         setModel(settings.model || 'claude-sonnet-4-5-20250929')
+        setHasHqCreds(settings.hasHqCredentials || false)
+        setHqUsername(settings.hasHqCredentials ? (settings.hqUsername || '••••••••') : '')
+        setHqApiKey(settings.hasHqCredentials ? '••••••••••••••••••••' : '')
       })
     }
   }, [isOpen])
@@ -50,6 +56,12 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       await window.electronAPI.setSettings(settings)
       if (apiKey && !apiKey.startsWith('••')) {
         await window.electronAPI.setApiKey(apiKey)
+      }
+      // Save HQ credentials if user entered new values
+      const usernameChanged = hqUsername && !hqUsername.startsWith('••')
+      const apiKeyChanged = hqApiKey && !hqApiKey.startsWith('••')
+      if (usernameChanged && apiKeyChanged) {
+        await window.electronAPI.setHqCredentials(hqUsername, hqApiKey)
       }
       onClose()
     } finally {
@@ -115,6 +127,33 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
               placeholder="my-project"
               className="w-full rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-sm text-white placeholder-white/20 focus:outline-none focus:border-accent/50"
             />
+          </div>
+
+          {/* HQ API Credentials */}
+          <div className="pt-3 border-t border-white/5">
+            <label className="block text-sm font-medium text-white/60 mb-1.5">CommCare HQ Username (email)</label>
+            <input
+              type="text"
+              value={hqUsername}
+              onChange={e => setHqUsername(e.target.value)}
+              onFocus={() => { if (hqUsername.startsWith('••')) setHqUsername('') }}
+              placeholder="user@example.com"
+              autoComplete="off"
+              className="w-full rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-sm text-white placeholder-white/20 focus:outline-none focus:border-accent/50"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-white/60 mb-1.5">CommCare HQ API Key</label>
+            <input
+              type="password"
+              value={hqApiKey}
+              onChange={e => setHqApiKey(e.target.value)}
+              onFocus={() => { if (hqApiKey.startsWith('••')) setHqApiKey('') }}
+              placeholder="Your HQ API key"
+              autoComplete="off"
+              className="w-full rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-sm text-white placeholder-white/20 focus:outline-none focus:border-accent/50"
+            />
+            <p className="text-xs text-white/30 mt-1">Find your API key at HQ &gt; Settings &gt; My Account</p>
           </div>
         </div>
 

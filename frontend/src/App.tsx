@@ -6,9 +6,10 @@ import SettingsModal from './components/SettingsModal'
 import ProgressTracker from './components/ProgressTracker'
 import ArchitecturePanel from './components/ArchitecturePanel'
 import AppNameModal from './components/AppNameModal'
+import HqImportModal from './components/HqImportModal'
 import WelcomeScreen from './components/WelcomeScreen'
 import { useChat } from './hooks/useChat'
-import type { Conversation, GenerationProgress, GenerationResult, HqImportResult } from './types'
+import type { Conversation, GenerationProgress, GenerationResult, HqImportResult, HqFetchResult } from './types'
 
 type PanelMode = 'chat' | 'uploaded'
 
@@ -63,6 +64,7 @@ export default function App() {
   // UI state (global)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [nameModalOpen, setNameModalOpen] = useState(false)
+  const [hqImportModalOpen, setHqImportModalOpen] = useState(false)
   const [pendingAppName, setPendingAppName] = useState('CommCare App')
 
   // Auto-update state (global)
@@ -329,6 +331,41 @@ export default function App() {
     )
   }, [injectMessages, setSpec])
 
+  const handleImportFromHq = useCallback(async (result: HqFetchResult) => {
+    if (!window.electronAPI) return
+
+    setUploadedFilePath(null)
+    setUploadedAppName(result.appName)
+    setPanelMode('uploaded')
+    setGenerationProgress(null)
+    setGenerationResult(null)
+    setHqImportResult(null)
+    setSpec(result.markdownSummary)
+
+    const userMsg = `I imported an existing CommCare app from HQ: "${result.appName}"`
+    const assistantMsg = `I've loaded your app **"${result.appName}"** from CommCare HQ. The structure is shown in the panel on the right.\n\nThis is a live production app — I'll only change what you explicitly ask for. Tell me what modifications you'd like to make.`
+    injectMessages(userMsg, assistantMsg)
+
+    await window.electronAPI.injectChatContext(
+      `The user imported an existing production CommCare app from CommCare HQ via the API. App name: "${result.appName}", App ID: ${result.appId}.
+
+CRITICAL INSTRUCTIONS FOR WORKING WITH THIS IMPORTED APP:
+1. NEVER modify, remove, or restructure anything the user did not explicitly ask to change.
+2. Preserve all existing field IDs, question IDs, case properties, and xmlns values exactly.
+3. If asked to add something, add it without touching existing parts.
+4. If asked to modify a form, change only the specific fields mentioned.
+5. When presenting changes, state what you changed and confirm nothing else was touched.
+6. Treat this as a live production system where careless changes cause data loss.
+
+Here is the full HQ Application JSON:
+
+\`\`\`json
+${JSON.stringify(result.hqJson, null, 2)}
+\`\`\``,
+      `I've analyzed the imported app "${result.appName}" from CommCare HQ. I understand this is a production app and I will ONLY make changes you explicitly request. I'm ready to help with modifications.`
+    )
+  }, [injectMessages, setSpec])
+
   const handleValidateUploaded = useCallback(async () => {
     if (!window.electronAPI || !uploadedFilePath || isGenerating) return
     setIsGenerating(true)
@@ -537,6 +574,7 @@ export default function App() {
               isLoading={isLoading}
               onSendMessage={handleSendMessage}
               onUploadExisting={handleUploadExisting}
+              onImportFromHq={() => setHqImportModalOpen(true)}
             />
           </div>
 
@@ -637,6 +675,11 @@ export default function App() {
         defaultName={pendingAppName}
         onConfirm={handleNameConfirmed}
         onCancel={() => setNameModalOpen(false)}
+      />
+      <HqImportModal
+        isOpen={hqImportModalOpen}
+        onClose={() => setHqImportModalOpen(false)}
+        onImport={handleImportFromHq}
       />
     </div>
   )

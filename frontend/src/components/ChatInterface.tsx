@@ -8,9 +8,10 @@ interface ChatInterfaceProps {
   isLoading: boolean
   onSendMessage: (content: string, attachments?: FileAttachment[]) => void
   onUploadExisting?: () => void
+  onImportFromHq?: () => void
 }
 
-export default function ChatInterface({ messages, isLoading, onSendMessage, onUploadExisting }: ChatInterfaceProps) {
+export default function ChatInterface({ messages, isLoading, onSendMessage, onUploadExisting, onImportFromHq }: ChatInterfaceProps) {
   const [input, setInput] = useState('')
   const [attachments, setAttachments] = useState<FileAttachment[]>([])
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -50,8 +51,10 @@ export default function ChatInterface({ messages, isLoading, onSendMessage, onUp
     const files = e.target.files
     if (!files) return
 
+    const MAX_FILE_SIZE = 100 * 1024 * 1024 // 100MB
     const newAttachments: FileAttachment[] = []
     for (const file of Array.from(files)) {
+      if (file.size > MAX_FILE_SIZE) continue
       const data = await fileToBase64(file)
       newAttachments.push({
         name: file.name,
@@ -69,8 +72,10 @@ export default function ChatInterface({ messages, isLoading, onSendMessage, onUp
     const files = e.dataTransfer.files
     if (!files.length) return
 
+    const MAX_FILE_SIZE = 100 * 1024 * 1024 // 100MB
     const newAttachments: FileAttachment[] = []
     for (const file of Array.from(files)) {
+      if (file.size > MAX_FILE_SIZE) continue
       const data = await fileToBase64(file)
       newAttachments.push({
         name: file.name,
@@ -120,24 +125,41 @@ export default function ChatInterface({ messages, isLoading, onSendMessage, onUp
                 WASH survey
               </SuggestionChip>
             </div>
-            {onUploadExisting && (
+            {(onUploadExisting || onImportFromHq) && (
               <>
                 <div className="flex items-center gap-3 mt-6">
                   <div className="h-px flex-1 bg-white/10" />
                   <span className="text-xs text-white/30">or</span>
                   <div className="h-px flex-1 bg-white/10" />
                 </div>
-                <button
-                  onClick={onUploadExisting}
-                  className="mt-4 flex items-center gap-2 px-4 py-2 rounded-full border border-white/10 text-sm text-white/40 hover:text-white/70 hover:border-white/20 hover:bg-white/5 transition-all"
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
-                    <polyline points="17 8 12 3 7 8" />
-                    <line x1="12" y1="3" x2="12" y2="15" />
-                  </svg>
-                  Upload existing app
-                </button>
+                <div className="flex gap-3 mt-4">
+                  {onUploadExisting && (
+                    <button
+                      onClick={onUploadExisting}
+                      className="flex items-center gap-2 px-4 py-2 rounded-full border border-white/10 text-sm text-white/40 hover:text-white/70 hover:border-white/20 hover:bg-white/5 transition-all"
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                        <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+                        <polyline points="17 8 12 3 7 8" />
+                        <line x1="12" y1="3" x2="12" y2="15" />
+                      </svg>
+                      Upload existing app
+                    </button>
+                  )}
+                  {onImportFromHq && (
+                    <button
+                      onClick={onImportFromHq}
+                      className="flex items-center gap-2 px-4 py-2 rounded-full border border-white/10 text-sm text-white/40 hover:text-white/70 hover:border-white/20 hover:bg-white/5 transition-all"
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                        <path d="M4 14.899A7 7 0 1115.71 8h1.79a4.5 4.5 0 012.5 8.242" />
+                        <path d="M12 12v9" />
+                        <path d="m8 17 4 4 4-4" />
+                      </svg>
+                      Import from CommCare HQ
+                    </button>
+                  )}
+                </div>
               </>
             )}
           </div>

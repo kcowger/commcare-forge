@@ -2,6 +2,8 @@ import { useState, useCallback, useRef, useEffect } from 'react'
 import type { ChatMessage, FileAttachment } from '../types'
 import { SpecStreamParser, stripSpecTags } from '../utils/specParser'
 
+const MAX_STREAM_SIZE = 5 * 1024 * 1024 // 5MB cap on streamed response
+
 export function useChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -14,6 +16,8 @@ export function useChat() {
     if (!window.electronAPI) return
 
     const cleanup = window.electronAPI.onStreamChunk((chunk: string) => {
+      // Guard against unbounded memory growth from streamed responses
+      if (streamingRef.current.length > MAX_STREAM_SIZE) return
       streamingRef.current += chunk
       const result = parserRef.current.processChunk(chunk)
 
