@@ -14,15 +14,15 @@ function createWindow() {
     minHeight: 600,
     title: 'CommCare Forge',
     icon: app.isPackaged
-      ? join(process.resourcesPath, 'icon.png')
-      : join(__dirname, '../../build/resources/icon.png'),
+      ? join(process.resourcesPath, process.platform === 'win32' ? 'icon.ico' : 'icon.png')
+      : join(__dirname, '../../build/resources', process.platform === 'win32' ? 'icon.ico' : 'icon.png'),
     webPreferences: {
       preload: join(__dirname, '../preload/preload.mjs'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false
     },
-    titleBarStyle: 'hiddenInset',
+    ...(process.platform === 'darwin' ? { titleBarStyle: 'hiddenInset' as const } : {}),
     backgroundColor: '#0a0a0a'
   })
 
