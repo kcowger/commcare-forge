@@ -1,5 +1,6 @@
 import React, { useRef, useEffect } from 'react'
 import ReactMarkdown from 'react-markdown'
+import rehypeSanitize from 'rehype-sanitize'
 import AppPreviewTree from './AppPreviewTree'
 
 interface ArchitecturePanelProps {
@@ -50,7 +51,7 @@ export default function ArchitecturePanel({ content, isStreaming, canBuild, onBu
       {/* Scrollable content */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 py-4">
         <div className="spec-markdown text-sm text-white/85 leading-relaxed">
-          <ReactMarkdown>{content}</ReactMarkdown>
+          <ReactMarkdown rehypePlugins={[rehypeSanitize]}>{content}</ReactMarkdown>
         </div>
         {isStreaming && (
           <span className="inline-block w-1.5 h-4 bg-accent animate-pulse ml-0.5 mt-1 rounded-sm" />

@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import type { FileAttachment, ChatMessage } from '../types'
 import ReactMarkdown from 'react-markdown'
+import rehypeSanitize from 'rehype-sanitize'
 
 interface ChatInterfaceProps {
   messages: ChatMessage[]
@@ -264,7 +265,7 @@ function MessageBubble({ message, animate }: { message: ChatMessage; animate: bo
             <p className="whitespace-pre-wrap">{message.content}</p>
           ) : (
             <div className="cc-markdown">
-              <ReactMarkdown>{message.content || (message.isStreaming ? '...' : '')}</ReactMarkdown>
+              <ReactMarkdown rehypePlugins={[rehypeSanitize]}>{message.content || (message.isStreaming ? '...' : '')}</ReactMarkdown>
             </div>
           )}
           {message.isStreaming && (

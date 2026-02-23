@@ -88,7 +88,14 @@ function getAllowedDirs(): string[] {
 }
 
 function validateFilePath(filePath: string): void {
-  const resolved = path.resolve(filePath)
+  let resolved: string
+  try {
+    // Resolve symlinks to prevent symlink-based path traversal
+    resolved = fs.realpathSync(filePath)
+  } catch {
+    // File doesn't exist yet (e.g. write target) — use resolve instead
+    resolved = path.resolve(filePath)
+  }
   const allowed = getAllowedDirs()
   const isAllowed = allowed.some(dir => resolved.startsWith(dir))
   if (!isAllowed) {
@@ -105,6 +112,21 @@ function validateHqServer(server: string): void {
     throw new Error('Invalid HQ server: must be a commcarehq.org domain')
   }
 }
+
+// Validate HQ domain (project space name)
+function validateHqDomain(domain: string): void {
+  if (domain && !/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/.test(domain)) {
+    throw new Error('Invalid project space domain: only alphanumeric characters, hyphens, and underscores allowed')
+  }
+}
+
+// Whitelist of allowed Claude models
+const ALLOWED_MODELS = new Set([
+  'claude-sonnet-4-5-20250929',
+  'claude-sonnet-4-6',
+  'claude-opus-4-6',
+  'claude-haiku-4-5-20251001'
+])
 
 const MAX_FILE_SIZE = 100 * 1024 * 1024 // 100MB
 
@@ -275,6 +297,7 @@ export function registerIpcHandlers(ipcMain: IpcMain) {
     }
 
     validateHqServer(hqServer)
+    validateHqDomain(hqDomain)
 
     const hqImport = new HqImportService()
     return await hqImport.initiateImport(hqServer, hqDomain, jsonPath)
@@ -498,8 +521,14 @@ export function registerIpcHandlers(ipcMain: IpcMain) {
       validateHqServer(settings.hqServer)
       store.set('hqServer', settings.hqServer)
     }
-    if (settings.hqDomain !== undefined) store.set('hqDomain', settings.hqDomain)
+    if (settings.hqDomain !== undefined) {
+      validateHqDomain(settings.hqDomain)
+      store.set('hqDomain', settings.hqDomain)
+    }
     if (settings.model !== undefined) {
+      if (!ALLOWED_MODELS.has(settings.model)) {
+        throw new Error('Invalid model selected')
+      }
       store.set('model', settings.model)
       claudeService = null
     }

@@ -72,6 +72,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
               onChange={e => setApiKey(e.target.value)}
               onFocus={() => { if (apiKey.startsWith('••')) setApiKey('') }}
               placeholder="sk-ant-..."
+              autoComplete="off"
               className="w-full rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-sm text-white placeholder-white/20 focus:outline-none focus:border-accent/50"
             />
             {!hasKey && (

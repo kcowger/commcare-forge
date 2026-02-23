@@ -33,6 +33,10 @@ function createWindow() {
     mainWindow.loadURL(url)
   } else {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    // Disable DevTools in production to prevent data inspection
+    mainWindow.webContents.on('devtools-opened', () => {
+      mainWindow?.webContents.closeDevTools()
+    })
   }
 
   mainWindow.on('closed', () => {
@@ -94,7 +98,7 @@ app.whenReady().then(() => {
       responseHeaders: {
         ...details.responseHeaders,
         'Content-Security-Policy': [
-          "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src https://api.anthropic.com; img-src 'self' data:"
+          "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src https://api.anthropic.com; img-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'"
         ]
       }
     })
