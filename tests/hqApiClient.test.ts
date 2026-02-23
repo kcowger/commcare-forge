@@ -215,16 +215,41 @@ describe('HqJsonSummarizer', () => {
     const md = summarizer.summarize(hqJson)
 
     expect(md).toContain('## Health App')
-    expect(md).toContain('Patient Module')
+    expect(md).toContain('### Patient Module')
     expect(md).toContain('`patient`')
-    expect(md).toContain('Register Patient')
+    expect(md).toContain('#### Register Patient')
     expect(md).toContain('(registration)')
-    expect(md).toContain('Follow-up')
+    expect(md).toContain('#### Follow-up')
     expect(md).toContain('(follow-up)')
     expect(md).toContain('Name')
     expect(md).toContain('Age')
     expect(md).toContain('Languages: en, fr')
     expect(md).toContain('1 module(s), 2 form(s)')
+  })
+
+  it('should use heading levels compatible with AppPreviewTree parser', () => {
+    const hqJson = {
+      name: 'Test App',
+      modules: [{
+        name: { en: 'Registration' },
+        case_type: 'patient',
+        forms: [{ name: { en: 'Register' }, questions: [{ label: 'Name', type: 'Text', value: '/data/name', tag: 'input' }] }],
+        case_details: { short: { columns: [] } }
+      }]
+    }
+
+    const md = summarizer.summarize(hqJson)
+
+    // ### for modules (not ####)
+    expect(md).toContain('### Registration')
+    expect(md).not.toContain('#### Registration')
+    // #### for forms (not - FormName)
+    expect(md).toContain('#### Register')
+    // ## for Case Types and Summary sections (not ###)
+    expect(md).toContain('## Case Types')
+    expect(md).toContain('## Summary')
+    // No "### Modules" section heading that would be misinterpreted as a module
+    expect(md).not.toContain('### Modules')
   })
 
   it('should handle app with no modules', () => {
@@ -398,14 +423,14 @@ describe('HqJsonSummarizer', () => {
 
     const md = summarizer.summarize(hqJson)
 
-    // Should just have the form name, no sub-bullets
+    // Should just have the form heading, no detail bullets
     const lines = md.split('\n')
-    const formLine = lines.findIndex(l => l.includes('- Form'))
+    const formLine = lines.findIndex(l => l.includes('#### Form'))
     expect(formLine).toBeGreaterThan(-1)
-    // Next non-empty line should not be an indented field
+    // Next non-empty line should not be a detail field
     const nextNonEmpty = lines.slice(formLine + 1).find(l => l.trim())
     expect(nextNonEmpty).toBeDefined()
-    expect(nextNonEmpty!.startsWith('  -')).toBe(false)
+    expect(nextNonEmpty!.startsWith('- ')).toBe(false)
   })
 
   it('should fall back to XForm XML when no questions array and attachment is a string', () => {

@@ -113,46 +113,40 @@ export class HqJsonSummarizer {
     lines.push('')
 
     if (modules.length > 0) {
-      lines.push('### Modules')
-      lines.push('')
-
       for (const mod of modules) {
         const modName = this.resolveName(mod.name) || 'Unnamed Module'
-        lines.push(`#### ${modName}`)
+        lines.push(`### ${modName}`)
 
         if (mod.case_type) {
           lines.push(`Case type: \`${mod.case_type}\``)
         }
 
         const forms: any[] = mod.forms || []
-        if (forms.length > 0) {
-          lines.push('**Forms:**')
-          for (const form of forms) {
-            const formName = this.resolveName(form.name) || 'Unnamed Form'
-            const typeHint = this.getFormTypeHint(form)
-            lines.push(`- ${formName}${typeHint ? ` ${typeHint}` : ''}`)
+        for (const form of forms) {
+          const formName = this.resolveName(form.name) || 'Unnamed Form'
+          const typeHint = this.getFormTypeHint(form)
+          lines.push(`#### ${formName}${typeHint ? ` ${typeHint}` : ''}`)
 
-            // Extract question labels — prefer HQ API questions array, fall back to XForm XML
-            const questions: any[] = form.questions || []
-            if (questions.length > 0) {
-              const fields = this.extractFromQuestions(questions)
+          // Extract question labels — prefer HQ API questions array, fall back to XForm XML
+          const questions: any[] = form.questions || []
+          if (questions.length > 0) {
+            const fields = this.extractFromQuestions(questions)
+            for (const field of fields.slice(0, 15)) {
+              lines.push(`- ${field}`)
+            }
+            if (fields.length > 15) {
+              lines.push(`- ... and ${fields.length - 15} more fields`)
+            }
+          } else {
+            // Fallback: try XForm XML from _attachments (locally-generated apps)
+            const xformKey = form.unique_id ? `${form.unique_id}.xml` : null
+            if (xformKey && hqJson._attachments?.[xformKey] && typeof hqJson._attachments[xformKey] === 'string') {
+              const fields = this.extractFormFields(hqJson._attachments[xformKey])
               for (const field of fields.slice(0, 15)) {
-                lines.push(`  - ${field}`)
+                lines.push(`- ${field}`)
               }
               if (fields.length > 15) {
-                lines.push(`  - ... and ${fields.length - 15} more fields`)
-              }
-            } else {
-              // Fallback: try XForm XML from _attachments (locally-generated apps)
-              const xformKey = form.unique_id ? `${form.unique_id}.xml` : null
-              if (xformKey && hqJson._attachments?.[xformKey] && typeof hqJson._attachments[xformKey] === 'string') {
-                const fields = this.extractFormFields(hqJson._attachments[xformKey])
-                for (const field of fields.slice(0, 15)) {
-                  lines.push(`  - ${field}`)
-                }
-                if (fields.length > 15) {
-                  lines.push(`  - ... and ${fields.length - 15} more fields`)
-                }
+                lines.push(`- ... and ${fields.length - 15} more fields`)
               }
             }
           }
@@ -175,7 +169,7 @@ export class HqJsonSummarizer {
     // Case types
     const caseTypes = [...new Set(modules.map((m: any) => m.case_type).filter(Boolean))]
     if (caseTypes.length > 0) {
-      lines.push('### Case Types')
+      lines.push('## Case Types')
       for (const ct of caseTypes) {
         lines.push(`- \`${ct}\``)
       }
@@ -184,7 +178,7 @@ export class HqJsonSummarizer {
 
     // Summary stats
     const totalForms = modules.reduce((sum: number, m: any) => sum + (m.forms?.length || 0), 0)
-    lines.push('### Summary')
+    lines.push('## Summary')
     lines.push(`- ${modules.length} module(s), ${totalForms} form(s)`)
     if (hqJson.langs?.length > 1) {
       lines.push(`- Languages: ${hqJson.langs.join(', ')}`)
