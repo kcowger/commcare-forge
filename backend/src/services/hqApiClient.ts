@@ -36,10 +36,10 @@ export class HqApiClient {
 
     const objects: any[] = data.objects || []
     const apps: HqAppSummary[] = objects
-      .filter((obj: any) => obj.doc_type === 'Application')
+      .filter((obj: any) => obj.id && obj.name)
       .map((obj: any) => ({
-        app_id: obj.id || obj._id,
-        name: obj.name || 'Unnamed App'
+        app_id: obj.id,
+        name: obj.name
       }))
       .sort((a: HqAppSummary, b: HqAppSummary) => a.name.localeCompare(b.name))
 
@@ -47,7 +47,7 @@ export class HqApiClient {
   }
 
   async getApp(appId: string): Promise<HqFetchResult> {
-    const url = `${this.baseUrl}/api/v0.5/application/${appId}/?format=json`
+    const url = `${this.baseUrl}/api/v0.5/application/${appId}/?format=json&extras=true`
     const resp = await this.fetchWithTimeout(url)
     const hqJson = await resp.json()
 
@@ -69,8 +69,7 @@ export class HqApiClient {
           'Accept': 'application/json'
         },
         signal: controller.signal,
-        // Reject redirects to prevent SSRF and auth header leakage
-        redirect: 'error'
+        redirect: 'follow'
       })
 
       if (resp.status === 401 || resp.status === 403) {
@@ -96,9 +95,6 @@ export class HqApiClient {
       }
       if (err.message?.includes('fetch failed') || err.code === 'ENOTFOUND') {
         throw new Error('Could not connect to CommCare HQ. Check your internet connection and server URL.')
-      }
-      if (err.message?.includes('redirect')) {
-        throw new Error('CommCare HQ returned an unexpected redirect. Check your server URL in Settings.')
       }
       throw err
     } finally {
