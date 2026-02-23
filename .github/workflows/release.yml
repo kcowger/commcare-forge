@@ -23,12 +23,19 @@ jobs:
 
       - run: npx electron-vite build && npx electron-builder --win --publish never
 
-      - name: Debug filenames
+      - name: Rename exe to match latest.yml
         run: |
-          echo "=== dist files ==="
-          ls dist/
-          echo "=== latest.yml ==="
-          cat dist/latest.yml
+          cd dist
+          EXPECTED=$(grep '^path:' latest.yml | sed 's/^path: //' | tr -d '\r')
+          ACTUAL=$(ls *.exe 2>/dev/null | head -1)
+          echo "latest.yml expects: $EXPECTED"
+          echo "Actual exe on disk: $ACTUAL"
+          if [ "$ACTUAL" != "$EXPECTED" ] && [ -n "$ACTUAL" ] && [ -n "$EXPECTED" ]; then
+            mv "$ACTUAL" "$EXPECTED"
+            echo "Renamed to: $EXPECTED"
+          else
+            echo "Names already match"
+          fi
         shell: bash
 
       - uses: actions/upload-artifact@v4
@@ -52,13 +59,6 @@ jobs:
 
       - run: npx electron-vite build && npx electron-builder --mac --publish never
 
-      - name: Debug filenames
-        run: |
-          echo "=== dist files ==="
-          ls dist/
-          echo "=== latest-mac.yml ==="
-          cat dist/latest-mac.yml
-
       - uses: actions/upload-artifact@v4
         with:
           name: mac-installer
@@ -80,13 +80,6 @@ jobs:
 
       - run: npx electron-vite build && npx electron-builder --linux AppImage --publish never
 
-      - name: Debug filenames
-        run: |
-          echo "=== dist files ==="
-          ls dist/
-          echo "=== latest-linux.yml ==="
-          cat dist/latest-linux.yml
-
       - uses: actions/upload-artifact@v4
         with:
           name: linux-installer
@@ -103,7 +96,10 @@ jobs:
           path: artifacts
 
       - name: Debug artifacts
-        run: find artifacts -type f | sort
+        run: |
+          find artifacts -type f | sort
+          echo "---"
+          cat artifacts/windows-installer/latest.yml
 
       - name: Upload to release
         uses: softprops/action-gh-release@v2
