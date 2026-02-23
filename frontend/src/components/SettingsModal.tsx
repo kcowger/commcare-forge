@@ -4,6 +4,7 @@ import type { AppSettings } from '../types'
 interface SettingsModalProps {
   isOpen: boolean
   onClose: () => void
+  onSettingsChanged?: () => void
 }
 
 const MODEL_OPTIONS = [
@@ -13,7 +14,7 @@ const MODEL_OPTIONS = [
   { value: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5 (Fast, least capable)' },
 ]
 
-export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
+export default function SettingsModal({ isOpen, onClose, onSettingsChanged }: SettingsModalProps) {
   const [apiKey, setApiKey] = useState('')
   const [hqServer, setHqServer] = useState('www.commcarehq.org')
   const [hqDomain, setHqDomain] = useState('')
@@ -63,6 +64,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       if (usernameChanged && apiKeyChanged) {
         await window.electronAPI.setHqCredentials(hqUsername, hqApiKey)
       }
+      onSettingsChanged?.()
       onClose()
     } finally {
       setSaving(false)

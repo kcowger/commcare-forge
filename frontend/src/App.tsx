@@ -66,6 +66,8 @@ export default function App() {
   const [nameModalOpen, setNameModalOpen] = useState(false)
   const [hqImportModalOpen, setHqImportModalOpen] = useState(false)
   const [pendingAppName, setPendingAppName] = useState('CommCare App')
+  const [hqDomain, setHqDomain] = useState('')
+  const [hqServer, setHqServer] = useState('www.commcarehq.org')
 
   // Auto-update state (global)
   const [updateAvailable, setUpdateAvailable] = useState<string | null>(null)
@@ -100,6 +102,11 @@ export default function App() {
         return
       }
       setApiKeyReady(true)
+      // Load settings for header display
+      window.electronAPI.getSettings().then(s => {
+        setHqDomain(s.hqDomain || '')
+        setHqServer(s.hqServer || 'www.commcarehq.org')
+      }).catch(() => {})
       // Load saved conversations
       try {
         const saved = await window.electronAPI.loadConversations()
@@ -457,6 +464,16 @@ ${JSON.stringify(result.hqJson, null, 2)}
     return sendMessage(content, attachments)
   }, [sendMessage, generationResult])
 
+  const handleDomainChange = useCallback(async (domain: string) => {
+    if (!window.electronAPI) return
+    try {
+      await window.electronAPI.setSettings({ hqDomain: domain })
+      setHqDomain(domain)
+    } catch (err: any) {
+      // Invalid domain — don't update state
+    }
+  }, [])
+
   const canGenerate = messages.length >= 2 && !isLoading && !isGenerating
   const hasPanel = !!architectureSpec
 
@@ -551,6 +568,9 @@ ${JSON.stringify(result.hqJson, null, 2)}
         onOpenSettings={() => setSettingsOpen(true)}
         onNewChat={handleNewTab}
         showNewChat={true}
+        hqDomain={hqDomain}
+        hqServer={hqServer}
+        onDomainChange={handleDomainChange}
       />
 
       <TabBar
@@ -669,6 +689,12 @@ ${JSON.stringify(result.hqJson, null, 2)}
       <SettingsModal
         isOpen={settingsOpen}
         onClose={() => setSettingsOpen(false)}
+        onSettingsChanged={() => {
+          window.electronAPI?.getSettings().then(s => {
+            setHqDomain(s.hqDomain || '')
+            setHqServer(s.hqServer || 'www.commcarehq.org')
+          }).catch(() => {})
+        }}
       />
       <AppNameModal
         isOpen={nameModalOpen}
