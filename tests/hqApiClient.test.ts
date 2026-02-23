@@ -245,4 +245,207 @@ describe('HqJsonSummarizer', () => {
     expect(md).toContain('Simple Module')
     expect(md).toContain('Simple Form')
   })
+
+  it('should extract questions from HQ API questions array', () => {
+    const hqJson = {
+      name: 'Survey App',
+      modules: [{
+        name: { en: 'Intake' },
+        case_type: 'patient',
+        forms: [{
+          name: { en: 'Registration Form' },
+          unique_id: 'form1',
+          actions: { open_case: { condition: { type: 'always' } } },
+          questions: [
+            { label: 'Patient Name', type: 'Text', value: '/data/name', tag: 'input' },
+            { label: 'Age', type: 'Int', value: '/data/age', tag: 'input' },
+            { label: 'Gender', type: 'Select', value: '/data/gender', tag: 'select1' },
+            { label: 'Date of Visit', type: 'Date', value: '/data/visit_date', tag: 'input' },
+            { label: '', type: 'DataBindOnly', value: '/data/meta/instanceID', tag: 'hidden' }
+          ]
+        }],
+        case_details: { short: { columns: [] } }
+      }],
+      _attachments: { 'form1.xml': { stub: true, length: 5000, content_type: 'text/xml' } }
+    }
+
+    const md = summarizer.summarize(hqJson)
+
+    expect(md).toContain('Patient Name *(Text)*')
+    expect(md).toContain('Age *(Int)*')
+    expect(md).toContain('Gender *(Select)*')
+    expect(md).toContain('Date of Visit *(Date)*')
+    // Hidden fields should be excluded
+    expect(md).not.toContain('DataBindOnly')
+    expect(md).not.toContain('instanceID')
+  })
+
+  it('should skip Group and Repeat type questions', () => {
+    const hqJson = {
+      name: 'App',
+      modules: [{
+        name: { en: 'Module' },
+        forms: [{
+          name: { en: 'Form' },
+          questions: [
+            { label: 'Personal Info', type: 'Group', value: '/data/personal', tag: 'group' },
+            { label: 'Name', type: 'Text', value: '/data/personal/name', tag: 'input' },
+            { label: 'Visits', type: 'Repeat', value: '/data/visits', tag: 'repeat' },
+            { label: 'Visit Date', type: 'Date', value: '/data/visits/date', tag: 'input' }
+          ]
+        }],
+        case_details: {}
+      }]
+    }
+
+    const md = summarizer.summarize(hqJson)
+
+    expect(md).toContain('Name *(Text)*')
+    expect(md).toContain('Visit Date *(Date)*')
+    expect(md).not.toContain('Personal Info')
+    expect(md).not.toContain('Visits *(Repeat)*')
+  })
+
+  it('should fall back to value path when label is missing', () => {
+    const hqJson = {
+      name: 'App',
+      modules: [{
+        name: { en: 'Module' },
+        forms: [{
+          name: { en: 'Form' },
+          questions: [
+            { label: '', type: 'Text', value: '/data/patient_name', tag: 'input' },
+            { label: 'Age', type: 'Int', value: '/data/age', tag: 'input' }
+          ]
+        }],
+        case_details: {}
+      }]
+    }
+
+    const md = summarizer.summarize(hqJson)
+
+    expect(md).toContain('patient_name *(Text)*')
+    expect(md).toContain('Age *(Int)*')
+  })
+
+  it('should prefer questions array over _attachments stubs', () => {
+    const hqJson = {
+      name: 'App',
+      modules: [{
+        name: { en: 'Module' },
+        forms: [{
+          name: { en: 'Form' },
+          unique_id: 'form1',
+          questions: [
+            { label: 'Question from API', type: 'Text', value: '/data/q1', tag: 'input' }
+          ]
+        }],
+        case_details: {}
+      }],
+      _attachments: {
+        'form1.xml': { stub: true, length: 5000, content_type: 'text/xml' }
+      }
+    }
+
+    const md = summarizer.summarize(hqJson)
+
+    // Should show question from API, not try to parse the stub
+    expect(md).toContain('Question from API *(Text)*')
+  })
+
+  it('should truncate at 15 questions and show remaining count', () => {
+    const questions = Array.from({ length: 20 }, (_, i) => ({
+      label: `Question ${i + 1}`,
+      type: 'Text',
+      value: `/data/q${i + 1}`,
+      tag: 'input'
+    }))
+
+    const hqJson = {
+      name: 'App',
+      modules: [{
+        name: { en: 'Module' },
+        forms: [{
+          name: { en: 'Form' },
+          questions
+        }],
+        case_details: {}
+      }]
+    }
+
+    const md = summarizer.summarize(hqJson)
+
+    expect(md).toContain('Question 1 *(Text)*')
+    expect(md).toContain('Question 15 *(Text)*')
+    expect(md).not.toContain('Question 16 *(Text)*')
+    expect(md).toContain('... and 5 more fields')
+  })
+
+  it('should not show questions when questions array is empty', () => {
+    const hqJson = {
+      name: 'App',
+      modules: [{
+        name: { en: 'Module' },
+        forms: [{
+          name: { en: 'Form' },
+          unique_id: 'form1',
+          questions: []
+        }],
+        case_details: {}
+      }],
+      _attachments: {}
+    }
+
+    const md = summarizer.summarize(hqJson)
+
+    // Should just have the form name, no sub-bullets
+    const lines = md.split('\n')
+    const formLine = lines.findIndex(l => l.includes('- Form'))
+    expect(formLine).toBeGreaterThan(-1)
+    // Next non-empty line should not be an indented field
+    const nextNonEmpty = lines.slice(formLine + 1).find(l => l.trim())
+    expect(nextNonEmpty).toBeDefined()
+    expect(nextNonEmpty!.startsWith('  -')).toBe(false)
+  })
+
+  it('should fall back to XForm XML when no questions array and attachment is a string', () => {
+    const xformXml = `<?xml version="1.0"?>
+<h:html xmlns:h="http://www.w3.org/1999/xhtml">
+<h:head>
+  <model>
+    <itext>
+      <translation lang="en" default="">
+        <text id="name-label"><value>Patient Name</value></text>
+        <text id="age-label"><value>Patient Age</value></text>
+      </translation>
+    </itext>
+  </model>
+</h:head>
+<h:body>
+  <input ref="/data/name"><label ref="jr:itext('name-label')"/></input>
+  <input ref="/data/age"><label ref="jr:itext('age-label')"/></input>
+</h:body>
+</h:html>`
+
+    const hqJson = {
+      name: 'App',
+      modules: [{
+        name: { en: 'Module' },
+        forms: [{
+          name: { en: 'Form' },
+          unique_id: 'form1'
+          // No questions array
+        }],
+        case_details: {}
+      }],
+      _attachments: {
+        'form1.xml': xformXml
+      }
+    }
+
+    const md = summarizer.summarize(hqJson)
+
+    expect(md).toContain('Patient Name')
+    expect(md).toContain('Patient Age')
+  })
 })

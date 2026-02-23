@@ -132,15 +132,27 @@ export class HqJsonSummarizer {
             const typeHint = this.getFormTypeHint(form)
             lines.push(`- ${formName}${typeHint ? ` ${typeHint}` : ''}`)
 
-            // Extract question labels from XForm attachment
-            const xformKey = form.unique_id ? `${form.unique_id}.xml` : null
-            if (xformKey && hqJson._attachments?.[xformKey]) {
-              const fields = this.extractFormFields(hqJson._attachments[xformKey])
-              for (const field of fields.slice(0, 10)) {
+            // Extract question labels — prefer HQ API questions array, fall back to XForm XML
+            const questions: any[] = form.questions || []
+            if (questions.length > 0) {
+              const fields = this.extractFromQuestions(questions)
+              for (const field of fields.slice(0, 15)) {
                 lines.push(`  - ${field}`)
               }
-              if (fields.length > 10) {
-                lines.push(`  - ... and ${fields.length - 10} more fields`)
+              if (fields.length > 15) {
+                lines.push(`  - ... and ${fields.length - 15} more fields`)
+              }
+            } else {
+              // Fallback: try XForm XML from _attachments (locally-generated apps)
+              const xformKey = form.unique_id ? `${form.unique_id}.xml` : null
+              if (xformKey && hqJson._attachments?.[xformKey] && typeof hqJson._attachments[xformKey] === 'string') {
+                const fields = this.extractFormFields(hqJson._attachments[xformKey])
+                for (const field of fields.slice(0, 15)) {
+                  lines.push(`  - ${field}`)
+                }
+                if (fields.length > 15) {
+                  lines.push(`  - ... and ${fields.length - 15} more fields`)
+                }
               }
             }
           }
@@ -192,6 +204,19 @@ export class HqJsonSummarizer {
     if (form.actions?.open_case?.condition?.type === 'always') return '(registration)'
     if (form.requires === 'case') return '(follow-up)'
     return ''
+  }
+
+  private extractFromQuestions(questions: any[]): string[] {
+    const fields: string[] = []
+    for (const q of questions) {
+      // Skip hidden values, groups, and repeat headers — only show actual questions
+      if (q.tag === 'hidden' || q.type === 'Group' || q.type === 'Repeat') continue
+      const label = q.label || q.value?.split('/').pop() || ''
+      if (!label) continue
+      const typeStr = q.type ? ` *(${q.type})*` : ''
+      fields.push(`${label}${typeStr}`)
+    }
+    return fields
   }
 
   private extractFormFields(xformXml: string): string[] {
