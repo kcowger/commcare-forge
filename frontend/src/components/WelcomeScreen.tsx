@@ -1,11 +1,21 @@
 import React, { useState } from 'react'
 
+const MODEL_OPTIONS = [
+  { value: 'claude-sonnet-4-5-20250929', label: 'Claude Sonnet 4.5 (Recommended)' },
+  { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
+  { value: 'claude-opus-4-6', label: 'Claude Opus 4.6 (Slowest, most capable)' },
+  { value: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5 (Fast, least capable)' },
+]
+
 interface WelcomeScreenProps {
   onComplete: () => void
 }
 
 export default function WelcomeScreen({ onComplete }: WelcomeScreenProps) {
   const [apiKey, setApiKey] = useState('')
+  const [model, setModel] = useState('claude-sonnet-4-5-20250929')
+  const [hqServer, setHqServer] = useState('www.commcarehq.org')
+  const [hqDomain, setHqDomain] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -17,9 +27,14 @@ export default function WelcomeScreen({ onComplete }: WelcomeScreenProps) {
     setError(null)
     try {
       await window.electronAPI.setApiKey(apiKey.trim())
+      await window.electronAPI.setSettings({
+        model,
+        hqServer,
+        hqDomain
+      })
       onComplete()
     } catch (err: any) {
-      setError(err.message || 'Failed to save API key')
+      setError(err.message || 'Failed to save settings')
     } finally {
       setSaving(false)
     }
@@ -46,24 +61,62 @@ export default function WelcomeScreen({ onComplete }: WelcomeScreenProps) {
 
         {/* Title */}
         <h1 className="text-2xl font-semibold text-white text-center mb-1">CommCare Forge</h1>
-        <p className="text-sm text-white/50 text-center mb-8">AI-powered CommCare app builder</p>
+        <p className="text-sm text-white/50 text-center mb-6">AI-powered CommCare app builder</p>
 
-        {/* API key form */}
-        <form onSubmit={handleSubmit} className="space-y-4">
+        {/* Setup form */}
+        <form onSubmit={handleSubmit} className="space-y-3">
           <div>
-            <label className="block text-sm font-medium text-white/60 mb-1.5">Anthropic API Key</label>
+            <label className="block text-xs font-medium text-white/60 mb-1">Anthropic API Key <span className="text-red-400">*</span></label>
             <input
               type="password"
               value={apiKey}
               onChange={e => setApiKey(e.target.value)}
               placeholder="sk-ant-..."
               autoFocus
-              className="w-full rounded-lg bg-white/5 border border-white/10 px-3 py-2.5 text-sm text-white placeholder-white/20 focus:outline-none focus:border-accent/50 transition-colors"
+              autoComplete="off"
+              className="w-full rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-sm text-white placeholder-white/20 focus:outline-none focus:border-accent/50 transition-colors"
             />
-            <p className="text-xs text-white/30 mt-1.5">
+            <p className="text-xs text-white/30 mt-1">
               Get one at{' '}
               <span className="text-accent/70">console.anthropic.com</span>
             </p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-white/60 mb-1">AI Model</label>
+            <select
+              value={model}
+              onChange={e => setModel(e.target.value)}
+              className="w-full rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-sm text-white focus:outline-none focus:border-accent/50 appearance-none cursor-pointer"
+            >
+              {MODEL_OPTIONS.map(opt => (
+                <option key={opt.value} value={opt.value} className="bg-[#111] text-white">
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-white/60 mb-1">CommCare HQ Server</label>
+            <input
+              type="text"
+              value={hqServer}
+              onChange={e => setHqServer(e.target.value)}
+              placeholder="www.commcarehq.org"
+              className="w-full rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-sm text-white placeholder-white/20 focus:outline-none focus:border-accent/50 transition-colors"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-white/60 mb-1">Project Space</label>
+            <input
+              type="text"
+              value={hqDomain}
+              onChange={e => setHqDomain(e.target.value)}
+              placeholder="my-project"
+              className="w-full rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-sm text-white placeholder-white/20 focus:outline-none focus:border-accent/50 transition-colors"
+            />
           </div>
 
           {error && (
