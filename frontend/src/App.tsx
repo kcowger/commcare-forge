@@ -69,6 +69,10 @@ export default function App() {
   const [hqDomain, setHqDomain] = useState('')
   const [hqServer, setHqServer] = useState('www.commcarehq.org')
 
+  // Java detection state (global)
+  const [javaWarning, setJavaWarning] = useState(false)
+  const [javaWarningDismissed, setJavaWarningDismissed] = useState(false)
+
   // Auto-update state (global)
   const [updateAvailable, setUpdateAvailable] = useState<string | null>(null)
   const [updateDownloading, setUpdateDownloading] = useState(false)
@@ -158,6 +162,14 @@ export default function App() {
       window.electronAPI.onUpdateError((message) => { setUpdateDownloading(false); setUpdateError(message) })
     ]
     return () => cleanups.forEach(fn => fn())
+  }, [])
+
+  // Java detection listener
+  useEffect(() => {
+    if (!window.electronAPI) return
+    return window.electronAPI.onJavaStatus((status) => {
+      if (!status.available) setJavaWarning(true)
+    })
   }, [])
 
   // Mode transition: when Claude starts streaming a new spec while in uploaded mode, switch to chat mode
@@ -369,7 +381,7 @@ Here is the full HQ Application JSON:
 \`\`\`json
 ${JSON.stringify(result.hqJson, null, 2)}
 \`\`\``,
-      `I've analyzed the imported app "${result.appName}" from CommCare HQ. I understand this is a production app and I will ONLY make changes you explicitly request. I'm ready to help with modifications.`
+      `I've analyzed the imported app "${result.appName}" from CommCare HQ. Here is the current app architecture:\n\n<app-spec>\n${result.markdownSummary}\n</app-spec>\n\nI understand this is a production app and I will ONLY make changes you explicitly request. I'm ready to help with modifications.`
     )
   }, [injectMessages, setSpec])
 
@@ -555,6 +567,21 @@ ${JSON.stringify(result.hqJson, null, 2)}
           </div>
           <button
             onClick={() => setUpdateDismissed(true)}
+            className="text-white/40 hover:text-white/70 transition-colors ml-4"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+      )}
+
+      {/* Java warning banner */}
+      {javaWarning && !javaWarningDismissed && (
+        <div className="flex items-center justify-between px-4 py-2 bg-amber-500/10 border-b border-amber-500/20 text-sm">
+          <span className="text-amber-300/90">Java 17+ not detected. App validation requires Java to be installed.</span>
+          <button
+            onClick={() => setJavaWarningDismissed(true)}
             className="text-white/40 hover:text-white/70 transition-colors ml-4"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

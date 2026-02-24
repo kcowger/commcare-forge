@@ -40,7 +40,7 @@ export interface CompactForm {
 
 export interface CompactQuestion {
   id: string
-  type: 'text' | 'int' | 'date' | 'select1' | 'select' | 'geopoint' | 'image' | 'barcode' | 'decimal' | 'long' | 'trigger'
+  type: 'text' | 'int' | 'date' | 'select1' | 'select' | 'geopoint' | 'image' | 'barcode' | 'decimal' | 'long' | 'trigger' | 'phone' | 'time' | 'datetime' | 'audio' | 'video' | 'signature' | 'hidden' | 'secret' | 'group' | 'repeat'
   label: string
   hint?: string
   required?: boolean
@@ -48,8 +48,11 @@ export interface CompactQuestion {
   constraint?: string
   constraint_msg?: string
   relevant?: string
+  calculate?: string
   /** For select1/select questions */
   options?: { value: string; label: string }[]
+  /** For group/repeat questions — nested child questions */
+  children?: CompactQuestion[]
 }
 
 /**
@@ -220,12 +223,15 @@ function buildQuestionParts(
   if (q.constraint) bindParts.push(`constraint="${escapeXml(q.constraint)}"`)
   if (q.constraint_msg) bindParts.push(`jr:constraintMsg="${escapeXml(q.constraint_msg)}"`)
   if (q.relevant) bindParts.push(`relevant="${escapeXml(q.relevant)}"`)
+  if (q.calculate) bindParts.push(`calculate="${escapeXml(q.calculate)}"`)
   binds.push(`<bind ${bindParts.join(' ')}/>`)
 
-  // itext
-  itextEntries.push(`<text id="${q.id}-label"><value>${escapeXml(q.label)}</value></text>`)
-  if (q.hint) {
-    itextEntries.push(`<text id="${q.id}-hint"><value>${escapeXml(q.hint)}</value></text>`)
+  // itext (hidden questions have no body element, so no label to reference)
+  if (q.type !== 'hidden') {
+    itextEntries.push(`<text id="${q.id}-label"><value>${escapeXml(q.label)}</value></text>`)
+    if (q.hint) {
+      itextEntries.push(`<text id="${q.id}-hint"><value>${escapeXml(q.hint)}</value></text>`)
+    }
   }
 
   // itext for select options
@@ -236,7 +242,53 @@ function buildQuestionParts(
   }
 
   // Body element
-  if (q.type === 'select1' || q.type === 'select') {
+  if (q.type === 'hidden') {
+    // Hidden values have no body element — data + bind only
+    return
+  } else if (q.type === 'group' || q.type === 'repeat') {
+    // Group/repeat: contains nested child questions
+    const childData: string[] = []
+    const childBinds: string[] = []
+    const childItext: string[] = []
+    const childBody: string[] = []
+    for (const child of (q.children || [])) {
+      buildQuestionParts(child, nodePath, childData, childBinds, childItext, childBody)
+    }
+    // Replace the self-closing data element with a proper parent element wrapping children
+    dataElements.pop()
+    dataElements.push(`<${q.id}>${childData.join('')}</${q.id}>`)
+    // Replace the group bind with just a relevant bind if needed
+    binds.pop()
+    if (q.relevant) {
+      binds.push(`<bind nodeset="${nodePath}" relevant="${escapeXml(q.relevant)}"/>`)
+    }
+    binds.push(...childBinds)
+    itextEntries.push(...childItext)
+    // Re-indent ALL lines of child body elements for proper nesting.
+    // Child elements have: line 0 at 0 indent (relative), subsequent lines with absolute indent.
+    // For group: line 0 needs +6 (4 base + 2 nesting), subsequent lines need +2.
+    // For repeat: line 0 needs +8 (4 base + 2 group + 2 repeat), subsequent lines need +4.
+    if (q.type === 'repeat') {
+      const indentedChildren = childBody.map(el => {
+        const lines = el.split('\n')
+        lines[0] = `        ${lines[0]}`
+        for (let i = 1; i < lines.length; i++) lines[i] = `    ${lines[i]}`
+        return lines.join('\n')
+      })
+      const innerLines = indentedChildren.join('\n')
+      bodyElements.push(`<group ref="${nodePath}">\n      <label ref="jr:itext('${q.id}-label')"/>\n      <repeat nodeset="${nodePath}">\n${innerLines}\n      </repeat>\n    </group>`)
+    } else {
+      const indentedChildren = childBody.map(el => {
+        const lines = el.split('\n')
+        lines[0] = `      ${lines[0]}`
+        for (let i = 1; i < lines.length; i++) lines[i] = `  ${lines[i]}`
+        return lines.join('\n')
+      })
+      const innerLines = indentedChildren.join('\n')
+      bodyElements.push(`<group ref="${nodePath}" appearance="field-list">\n      <label ref="jr:itext('${q.id}-label')"/>\n${innerLines}\n    </group>`)
+    }
+    return
+  } else if (q.type === 'select1' || q.type === 'select') {
     const tag = q.type === 'select1' ? 'select1' : 'select'
     const items = (q.options || []).map(opt =>
       `  <item><label ref="jr:itext('${q.id}-${opt.value}-label')"/><value>${escapeXml(opt.value)}</value></item>`
@@ -250,30 +302,57 @@ function buildQuestionParts(
     if (q.hint) el += `\n      <hint ref="jr:itext('${q.id}-hint')"/>`
     el += `\n    </trigger>`
     bodyElements.push(el)
-  } else if (q.type === 'image') {
-    let el = `<upload ref="${nodePath}" mediatype="image/*">\n      <label ref="jr:itext('${q.id}-label')"/>`
+  } else if (q.type === 'secret') {
+    let el = `<secret ref="${nodePath}">\n      <label ref="jr:itext('${q.id}-label')"/>`
+    if (q.hint) el += `\n      <hint ref="jr:itext('${q.id}-hint')"/>`
+    el += `\n    </secret>`
+    bodyElements.push(el)
+  } else if (q.type === 'image' || q.type === 'audio' || q.type === 'video' || q.type === 'signature') {
+    const mediatype = q.type === 'audio' ? 'audio/*' : q.type === 'video' ? 'video/*' : 'image/*'
+    const appearance = q.type === 'signature' ? ' appearance="signature"' : ''
+    let el = `<upload ref="${nodePath}" mediatype="${mediatype}"${appearance}>\n      <label ref="jr:itext('${q.id}-label')"/>`
     if (q.hint) el += `\n      <hint ref="jr:itext('${q.id}-hint')"/>`
     el += `\n    </upload>`
     bodyElements.push(el)
   } else {
-    let el = `<input ref="${nodePath}">\n      <label ref="jr:itext('${q.id}-label')"/>`
+    // Input types: text, int, decimal, long, date, time, datetime, geopoint, barcode, phone
+    const appearance = getAppearance(q.type)
+    const appearanceAttr = appearance ? ` appearance="${appearance}"` : ''
+    let el = `<input ref="${nodePath}"${appearanceAttr}>\n      <label ref="jr:itext('${q.id}-label')"/>`
     if (q.hint) el += `\n      <hint ref="jr:itext('${q.id}-hint')"/>`
     el += `\n    </input>`
     bodyElements.push(el)
   }
 }
 
+function getAppearance(type: string): string | null {
+  switch (type) {
+    case 'phone': return 'numeric'
+    default: return null
+  }
+}
+
 function getXsdType(type: string): string | null {
   switch (type) {
     case 'text': return 'xsd:string'
+    case 'phone': return 'xsd:string'
     case 'int': return 'xsd:int'
     case 'long': return 'xsd:long'
     case 'decimal': return 'xsd:decimal'
     case 'date': return 'xsd:date'
+    case 'time': return 'xsd:time'
+    case 'datetime': return 'xsd:dateTime'
     case 'geopoint': return 'xsd:string'
     case 'barcode': return 'xsd:string'
     case 'image': return 'xsd:string'
+    case 'audio': return 'xsd:string'
+    case 'video': return 'xsd:string'
+    case 'signature': return 'xsd:string'
+    case 'hidden': return 'xsd:string'
+    case 'secret': return 'xsd:string'
     case 'trigger': return null
+    case 'group': return null
+    case 'repeat': return null
     case 'select1': return 'xsd:string'
     case 'select': return 'xsd:string'
     default: return 'xsd:string'
@@ -474,19 +553,37 @@ export function validateCompact(compact: CompactApp): string[] {
         errors.push(`"${form.name}" is a registration form but has no case_name_field`)
       }
 
-      // Validate question ids
-      for (const q of (form.questions || [])) {
-        if (!q.id) errors.push(`Question in "${form.name}" has no id`)
-        if (!q.type) errors.push(`Question "${q.id}" in "${form.name}" has no type`)
-        if (!q.label) errors.push(`Question "${q.id}" in "${form.name}" has no label`)
-        if ((q.type === 'select1' || q.type === 'select') && (!q.options || q.options.length === 0)) {
-          errors.push(`Question "${q.id}" in "${form.name}" is a select but has no options`)
+      // Validate question ids (recursively for group/repeat children)
+      function validateQuestions(questions: CompactQuestion[], formName: string) {
+        for (const q of questions) {
+          if (!q.id) errors.push(`Question in "${formName}" has no id`)
+          if (!q.type) errors.push(`Question "${q.id}" in "${formName}" has no type`)
+          if (!q.label && q.type !== 'hidden') errors.push(`Question "${q.id}" in "${formName}" has no label`)
+          if ((q.type === 'select1' || q.type === 'select') && (!q.options || q.options.length === 0)) {
+            errors.push(`Question "${q.id}" in "${formName}" is a select but has no options`)
+          }
+          if ((q.type === 'group' || q.type === 'repeat') && q.children) {
+            validateQuestions(q.children, formName)
+          }
         }
+      }
+      validateQuestions(form.questions || [], form.name)
+
+      // Collect all question IDs including those inside groups/repeats
+      function collectQuestionIds(questions: CompactQuestion[]): string[] {
+        const ids: string[] = []
+        for (const q of questions) {
+          ids.push(q.id)
+          if ((q.type === 'group' || q.type === 'repeat') && q.children) {
+            ids.push(...collectQuestionIds(q.children))
+          }
+        }
+        return ids
       }
 
       // Check case_name_field refers to a valid question
       if (form.type === 'registration' && form.case_name_field) {
-        const questionIds = (form.questions || []).map(q => q.id)
+        const questionIds = collectQuestionIds(form.questions || [])
         if (!questionIds.includes(form.case_name_field)) {
           errors.push(`"${form.name}" case_name_field "${form.case_name_field}" doesn't match any question id`)
         }
@@ -503,7 +600,7 @@ export function validateCompact(compact: CompactApp): string[] {
 
       // Check case_properties values refer to valid question ids
       if (form.case_properties) {
-        const questionIds = (form.questions || []).map(q => q.id)
+        const questionIds = collectQuestionIds(form.questions || [])
         for (const [prop, qId] of Object.entries(form.case_properties)) {
           if (!questionIds.includes(qId)) {
             errors.push(`"${form.name}" case property "${prop}" maps to question "${qId}" which doesn't exist`)
@@ -513,7 +610,7 @@ export function validateCompact(compact: CompactApp): string[] {
 
       // Check case_preload keys refer to valid question ids and values aren't reserved
       if (form.case_preload) {
-        const questionIds = (form.questions || []).map(q => q.id)
+        const questionIds = collectQuestionIds(form.questions || [])
         for (const [qId, caseProp] of Object.entries(form.case_preload)) {
           if (!questionIds.includes(qId)) {
             errors.push(`"${form.name}" case_preload references question "${qId}" which doesn't exist`)

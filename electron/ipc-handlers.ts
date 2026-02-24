@@ -3,7 +3,7 @@ import electronUpdater from 'electron-updater'
 const { autoUpdater } = electronUpdater
 import { ClaudeService } from '@backend/services/claude'
 import { AppGenerator } from '@backend/services/appGenerator'
-import { CliValidator } from '@backend/services/cliValidator'
+import { CliValidator, checkJavaAvailable } from '@backend/services/cliValidator'
 import { AppExporter } from '@backend/services/appExporter'
 import { HqImportService } from '@backend/services/hqImport'
 import { HqValidator } from '@backend/services/hqValidator'
@@ -708,6 +708,19 @@ export function registerIpcHandlers(ipcMain: IpcMain) {
     }
     pendingHistory = null
   })
+
+  // Java availability check
+  ipcMain.handle('system:check-java', async () => checkJavaAvailable())
+
+  setTimeout(async () => {
+    const result = await checkJavaAvailable()
+    const windows = BrowserWindow.getAllWindows()
+    for (const win of windows) {
+      if (!win.isDestroyed()) {
+        win.webContents.send('system:java-status', result)
+      }
+    }
+  }, 3000)
 
   // Background CLI jar update check
   setTimeout(() => {

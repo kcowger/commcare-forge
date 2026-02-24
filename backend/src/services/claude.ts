@@ -1,5 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { PDFDocument } from 'pdf-lib'
+import mammoth from 'mammoth'
+import * as XLSX from 'xlsx'
 import { SYSTEM_PROMPT } from '../prompts/system'
 import type { FileAttachment, ConversationMessage } from '../types'
 
@@ -147,8 +149,41 @@ export class ClaudeService {
             }
           })
         }
+      } else if (attachment.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || attachment.name.endsWith('.docx')) {
+        try {
+          const buffer = Buffer.from(attachment.data, 'base64')
+          const result = await mammoth.extractRawText({ buffer })
+          content.push({
+            type: 'text',
+            text: `[Attached document: ${attachment.name}]\n${result.value}`
+          })
+        } catch {
+          content.push({
+            type: 'text',
+            text: `[Attached file: ${attachment.name}]\n(Failed to parse DOCX content)`
+          })
+        }
+      } else if (attachment.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || attachment.name.endsWith('.xlsx')) {
+        try {
+          const buffer = Buffer.from(attachment.data, 'base64')
+          const workbook = XLSX.read(buffer, { type: 'buffer' })
+          const sheets: string[] = []
+          for (const sheetName of workbook.SheetNames) {
+            const csv = XLSX.utils.sheet_to_csv(workbook.Sheets[sheetName])
+            sheets.push(`--- Sheet: ${sheetName} ---\n${csv}`)
+          }
+          content.push({
+            type: 'text',
+            text: `[Attached spreadsheet: ${attachment.name}]\n${sheets.join('\n\n')}`
+          })
+        } catch {
+          content.push({
+            type: 'text',
+            text: `[Attached file: ${attachment.name}]\n(Failed to parse XLSX content)`
+          })
+        }
       } else {
-        // For text-based files (DOCX text, XLSX parsed to text), include as text
+        // For other text-based files, include as text
         content.push({
           type: 'text',
           text: `[Attached file: ${attachment.name}]\n${attachment.data}`

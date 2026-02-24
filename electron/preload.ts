@@ -97,6 +97,10 @@ export type ElectronAPI = {
   onUpdateAvailable: (callback: (version: string) => void) => () => void
   onUpdateDownloadProgress: (callback: (percent: number) => void) => () => void
   onUpdateDownloaded: (callback: () => void) => () => void
+  onUpdateError: (callback: (message: string) => void) => () => void
+  // Java detection
+  checkJava: () => Promise<{ available: boolean; version?: string }>
+  onJavaStatus: (callback: (status: { available: boolean; version?: string }) => void) => () => void
   // Conversation persistence
   saveConversations: (data: { conversations: any[]; activeId: string }) => Promise<void>
   loadConversations: () => Promise<{ conversations: any[]; activeId: string } | null>
@@ -197,6 +201,15 @@ const api: ElectronAPI = {
     const handler = (_event: Electron.IpcRendererEvent, message: string) => callback(message)
     ipcRenderer.on('update:error', handler)
     return () => ipcRenderer.removeListener('update:error', handler)
+  },
+  // Java detection
+  checkJava: () => {
+    return ipcRenderer.invoke('system:check-java')
+  },
+  onJavaStatus: (callback: (status: { available: boolean; version?: string }) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, status: { available: boolean; version?: string }) => callback(status)
+    ipcRenderer.on('system:java-status', handler)
+    return () => ipcRenderer.removeListener('system:java-status', handler)
   },
   // Conversation persistence
   saveConversations: (data: { conversations: any[]; activeId: string }) => {

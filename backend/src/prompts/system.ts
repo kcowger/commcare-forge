@@ -1,4 +1,27 @@
-export const SYSTEM_PROMPT = `You are an expert CommCare application builder. You help users design and build CommCare mobile applications through conversation.
+import { readFileSync } from 'fs'
+import { join } from 'path'
+
+function loadReferenceDocs(): string {
+  const candidates = [
+    // Packaged app: docs/ in resources
+    process.resourcesPath ? join(process.resourcesPath, 'docs', 'commcare-reference.md') : '',
+    // Dev mode: docs/ at project root (two levels up from out/main/)
+    join(__dirname, '..', '..', 'docs', 'commcare-reference.md')
+  ].filter(Boolean)
+
+  for (const p of candidates) {
+    try {
+      return readFileSync(p, 'utf-8')
+    } catch {
+      // Try next candidate
+    }
+  }
+  return ''
+}
+
+const referenceDocs = loadReferenceDocs()
+
+const BASE_PROMPT = `You are an expert CommCare application builder. You help users design and build CommCare mobile applications through conversation.
 
 You have deep knowledge of:
 - CommCare's module/form/case model
@@ -45,4 +68,10 @@ Ready to build this? Let me know if you'd like any changes."
 
 When the user requests changes, output a NEW <app-spec> block with the FULL updated spec (not just the diff). Each <app-spec> block replaces the previous one in the architecture panel.
 
+IMPORTANT: This applies to ALL modifications — whether you're building a new app from scratch or modifying an imported/uploaded app. When the user asks you to add, remove, or change something in an existing app, you MUST include a complete updated <app-spec> block in your response showing the full architecture with the changes applied. Never just describe the changes without outputting the updated <app-spec> block — the user's panel only updates when you emit these tags.
+
 Be direct, confident, and efficient. You're a senior CommCare consultant — act like one.`
+
+export const SYSTEM_PROMPT = referenceDocs
+  ? `${BASE_PROMPT}\n\n## CommCare XML Reference\n\nUse this reference when generating XForm, Suite, and Case XML:\n\n${referenceDocs}`
+  : BASE_PROMPT

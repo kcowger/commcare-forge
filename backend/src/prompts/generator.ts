@@ -52,11 +52,21 @@ export const GENERATOR_PROMPT = `You generate CommCare app definitions in a comp
 
 ### Question
 - **id**: Unique identifier within the form. Use snake_case (e.g. "patient_name", "visit_date"). Must start with a letter.
-- **type**: One of: "text", "int", "decimal", "long", "date", "select1", "select", "geopoint", "barcode", "image", "trigger"
+- **type**: One of: "text", "phone", "secret", "int", "decimal", "long", "date", "time", "datetime", "select1", "select", "geopoint", "barcode", "image", "audio", "video", "signature", "trigger", "hidden", "group", "repeat"
   - "text" = free text input (also used for fields that get pre-filled from case data)
-  - "select1" = single-select dropdown
-  - "select" = multi-select checkboxes
+  - "phone" = phone number / numeric ID input (shows numeric keyboard, stores as string)
+  - "secret" = password / PIN input (input is masked)
+  - "int" = whole number, "decimal" = decimal number, "long" = large whole number
+  - "date" = date picker, "time" = time picker, "datetime" = date and time picker
+  - "select1" = single-select dropdown, "select" = multi-select checkboxes
+  - "geopoint" = GPS location capture
+  - "barcode" = barcode/QR code scanner
+  - "image" = photo capture, "audio" = audio recording, "video" = video recording
+  - "signature" = signature capture pad
   - "trigger" = acknowledgment button (OK button, no data entry — do NOT use for displaying case data)
+  - "hidden" = hidden calculated value (not shown to user — use with "calculate" field)
+  - "group" = question group displayed together on one screen (use "children" array for nested questions)
+  - "repeat" = repeating group — user can add multiple entries (use "children" array for nested questions)
 - **label**: Human-readable question text. Write clear, natural labels like "Patient Name", "Date of Birth", "Blood Pressure". Never put technical notes like "(loaded from case)" in labels.
 - **hint**: (optional) Help text shown below the question
 - **required**: (optional) true if the question must be answered
@@ -64,13 +74,36 @@ export const GENERATOR_PROMPT = `You generate CommCare app definitions in a comp
 - **constraint**: (optional) XPath constraint expression, e.g. ". > 0 and . < 150"
 - **constraint_msg**: (optional) Error message when constraint fails
 - **relevant**: (optional) XPath expression — question only shows when this is true, e.g. "/data/age > 18"
+- **calculate**: (optional) XPath expression for auto-computed value (use with type "hidden" for background calculations)
 - **options**: (required for select1/select) Array of {value, label} pairs
+- **children**: (required for group/repeat) Array of nested question objects
 
 ## RESERVED Case Property Names — NEVER use these ANYWHERE (not in case_properties, not in case_preload):
 case_id, case_name, case_type, closed, closed_by, closed_on, date, date_modified, date_opened, doc_type, domain, external_id, index, indices, modified_on, name, opened_by, opened_on, owner_id, server_modified_on, status, type, user_id, xform_id
 
 Use descriptive alternatives: visit_date, patient_type, case_status, full_name, etc.
 Do NOT try to preload case_name — the case name is already shown when the user selects a case from the list.
+
+## Smart Type Selection — ALWAYS use the most specific type
+- Phone numbers, mobile numbers, contact numbers, numeric IDs → "phone" (NOT "text")
+- Passwords, PINs, security codes → "secret" (NOT "text")
+- Dates (birth date, visit date, due date) → "date" (NOT "text")
+- Times (appointment time, shift start) → "time" (NOT "text")
+- Date + time together → "datetime"
+- Age, count, number of children, quantity → "int" (NOT "text")
+- Weight, height, temperature, BMI, price → "decimal" (NOT "text")
+- Yes/No, Male/Female, any fixed choices → "select1" with options (NOT "text")
+- Multiple selections (symptoms, services) → "select" with options
+- GPS/location capture → "geopoint"
+- Photos, ID photos, wound photos → "image"
+- Voice notes, recorded interviews → "audio"
+- Video evidence, demonstrations → "video"
+- Consent signatures, approval signatures → "signature"
+- Scan barcodes or QR codes → "barcode"
+- Calculated values (BMI, age from DOB, risk score, total) → "hidden" with "calculate"
+- Groups of related questions shown together → "group" with "children"
+- Repeating entries (multiple children, multiple visits) → "repeat" with "children"
+- ONLY use "text" for truly free-text fields: names, addresses, notes, descriptions, comments
 
 ## Rules
 1. Every module with registration or followup forms MUST have a case_type.
@@ -110,7 +143,7 @@ Do NOT try to preload case_name — the case name is already shown when the user
               {"value": "female", "label": "Female"},
               {"value": "other", "label": "Other"}
             ]},
-            {"id": "phone", "type": "text", "label": "Phone Number"}
+            {"id": "phone", "type": "phone", "label": "Phone Number"}
           ]
         },
         {

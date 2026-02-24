@@ -310,4 +310,221 @@ describe('expandToHqJson', () => {
     expect(xform).toContain('>Red<')
     expect(xform).toContain('>Blue<')
   })
+
+  it('generates phone input with numeric appearance', () => {
+    const app: CompactApp = {
+      app_name: 'Phone Test',
+      modules: [{
+        name: 'Contacts',
+        forms: [{
+          name: 'Add Contact',
+          type: 'survey',
+          questions: [
+            { id: 'phone', type: 'phone', label: 'Phone Number' }
+          ]
+        }]
+      }]
+    }
+    const hq = expandToHqJson(app)
+    const xform = hq._attachments[`${hq.modules[0].forms[0].unique_id}.xml`]
+    expect(xform).toContain('appearance="numeric"')
+    expect(xform).toContain('<input ref="/data/phone" appearance="numeric">')
+    expect(xform).toContain('type="xsd:string"')
+  })
+
+  it('generates time and datetime with correct xsd types', () => {
+    const app: CompactApp = {
+      app_name: 'Time Test',
+      modules: [{
+        name: 'Scheduling',
+        forms: [{
+          name: 'Schedule',
+          type: 'survey',
+          questions: [
+            { id: 'start_time', type: 'time', label: 'Start Time' },
+            { id: 'appointment', type: 'datetime', label: 'Appointment' }
+          ]
+        }]
+      }]
+    }
+    const hq = expandToHqJson(app)
+    const xform = hq._attachments[`${hq.modules[0].forms[0].unique_id}.xml`]
+    expect(xform).toContain('nodeset="/data/start_time" type="xsd:time"')
+    expect(xform).toContain('nodeset="/data/appointment" type="xsd:dateTime"')
+  })
+
+  it('generates audio/video upload elements with correct mediatypes', () => {
+    const app: CompactApp = {
+      app_name: 'Media Test',
+      modules: [{
+        name: 'Media',
+        forms: [{
+          name: 'Collect Media',
+          type: 'survey',
+          questions: [
+            { id: 'recording', type: 'audio', label: 'Voice Note' },
+            { id: 'clip', type: 'video', label: 'Video Clip' }
+          ]
+        }]
+      }]
+    }
+    const hq = expandToHqJson(app)
+    const xform = hq._attachments[`${hq.modules[0].forms[0].unique_id}.xml`]
+    expect(xform).toContain('mediatype="audio/*"')
+    expect(xform).toContain('mediatype="video/*"')
+  })
+
+  it('generates signature upload with signature appearance', () => {
+    const app: CompactApp = {
+      app_name: 'Sig Test',
+      modules: [{
+        name: 'Consent',
+        forms: [{
+          name: 'Get Consent',
+          type: 'survey',
+          questions: [
+            { id: 'sig', type: 'signature', label: 'Signature' }
+          ]
+        }]
+      }]
+    }
+    const hq = expandToHqJson(app)
+    const xform = hq._attachments[`${hq.modules[0].forms[0].unique_id}.xml`]
+    expect(xform).toContain('appearance="signature"')
+    expect(xform).toContain('mediatype="image/*"')
+  })
+
+  it('generates hidden field with no body element and calculate attribute', () => {
+    const app: CompactApp = {
+      app_name: 'Calc Test',
+      modules: [{
+        name: 'BMI',
+        forms: [{
+          name: 'Calculate BMI',
+          type: 'survey',
+          questions: [
+            { id: 'weight', type: 'decimal', label: 'Weight (kg)' },
+            { id: 'height', type: 'decimal', label: 'Height (m)' },
+            { id: 'bmi', type: 'hidden', label: 'BMI', calculate: '/data/weight div (/data/height * /data/height)' }
+          ]
+        }]
+      }]
+    }
+    const hq = expandToHqJson(app)
+    const xform = hq._attachments[`${hq.modules[0].forms[0].unique_id}.xml`]
+    // Should have data element and bind
+    expect(xform).toContain('<bmi/>')
+    expect(xform).toContain('nodeset="/data/bmi"')
+    expect(xform).toContain('calculate="/data/weight div (/data/height * /data/height)"')
+    // Should NOT have a body element for hidden field
+    expect(xform).not.toContain('ref="/data/bmi">')
+  })
+
+  it('generates secret input element for passwords/PINs', () => {
+    const app: CompactApp = {
+      app_name: 'Auth Test',
+      modules: [{
+        name: 'Auth',
+        forms: [{
+          name: 'Login',
+          type: 'survey',
+          questions: [
+            { id: 'pin', type: 'secret', label: 'Enter PIN' }
+          ]
+        }]
+      }]
+    }
+    const hq = expandToHqJson(app)
+    const xform = hq._attachments[`${hq.modules[0].forms[0].unique_id}.xml`]
+    expect(xform).toContain('<secret ref="/data/pin">')
+    expect(xform).toContain('type="xsd:string"')
+  })
+
+  it('generates group with nested children as field-list', () => {
+    const app: CompactApp = {
+      app_name: 'Group Test',
+      modules: [{
+        name: 'Intake',
+        forms: [{
+          name: 'Register',
+          type: 'survey',
+          questions: [
+            {
+              id: 'personal_info', type: 'group', label: 'Personal Information',
+              children: [
+                { id: 'first_name', type: 'text', label: 'First Name' },
+                { id: 'last_name', type: 'text', label: 'Last Name' }
+              ]
+            }
+          ]
+        }]
+      }]
+    }
+    const hq = expandToHqJson(app)
+    const xform = hq._attachments[`${hq.modules[0].forms[0].unique_id}.xml`]
+    // Group body element must have ref pointing to data node
+    expect(xform).toContain('<group ref="/data/personal_info" appearance="field-list">')
+    expect(xform).toContain('<first_name/>')
+    expect(xform).toContain('<last_name/>')
+    expect(xform).toContain('ref="/data/personal_info/first_name"')
+    expect(xform).toContain('ref="/data/personal_info/last_name"')
+  })
+
+  it('generates repeat with nested children', () => {
+    const app: CompactApp = {
+      app_name: 'Repeat Test',
+      modules: [{
+        name: 'Family',
+        forms: [{
+          name: 'Register Family',
+          type: 'survey',
+          questions: [
+            {
+              id: 'children', type: 'repeat', label: 'Children',
+              children: [
+                { id: 'child_name', type: 'text', label: 'Child Name' },
+                { id: 'child_age', type: 'int', label: 'Age' }
+              ]
+            }
+          ]
+        }]
+      }]
+    }
+    const hq = expandToHqJson(app)
+    const xform = hq._attachments[`${hq.modules[0].forms[0].unique_id}.xml`]
+    // Repeat outer group must have ref pointing to data node
+    expect(xform).toContain('<group ref="/data/children">')
+    expect(xform).toContain('<repeat nodeset="/data/children">')
+    expect(xform).toContain('ref="/data/children/child_name"')
+    expect(xform).toContain('ref="/data/children/child_age"')
+    expect(xform).toContain('nodeset="/data/children/child_age" type="xsd:int"')
+  })
+
+  it('validates questions inside groups/repeats', () => {
+    const app: CompactApp = {
+      app_name: 'Nested Validation',
+      modules: [{
+        name: 'Mod',
+        case_type: 'person',
+        forms: [{
+          name: 'Form',
+          type: 'registration',
+          case_name_field: 'child_name',
+          case_properties: { 'child_age': 'child_age' },
+          questions: [
+            {
+              id: 'group1', type: 'group', label: 'Group',
+              children: [
+                { id: 'child_name', type: 'text', label: 'Name' },
+                { id: 'child_age', type: 'int', label: 'Age' }
+              ]
+            }
+          ]
+        }]
+      }]
+    }
+    // Should validate without errors — child IDs inside groups should be found
+    const errors = validateCompact(app)
+    expect(errors).toHaveLength(0)
+  })
 })

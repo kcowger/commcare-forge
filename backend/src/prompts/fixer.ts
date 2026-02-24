@@ -56,15 +56,26 @@ Form type must be "registration", "followup", or "survey".
 
 ## Question Types
 - "text" — free text input (also for preloaded case data fields)
+- "phone" — phone number / numeric ID (numeric keyboard)
+- "secret" — password / PIN (masked input)
 - "int" — whole number
 - "decimal" — decimal number
+- "long" — large whole number
 - "date" — date picker
+- "time" — time picker
+- "datetime" — date and time picker
 - "select1" — single select (needs options array)
 - "select" — multi select (needs options array)
 - "geopoint" — GPS location
-- "barcode" — barcode scanner
+- "barcode" — barcode/QR code scanner
 - "image" — photo capture
+- "audio" — audio recording
+- "video" — video recording
+- "signature" — signature capture
 - "trigger" — OK button/acknowledgment only (NOT for displaying case data)
+- "hidden" — hidden calculated value (use with "calculate" field)
+- "group" — question group displayed together (has "children" array)
+- "repeat" — repeating group (has "children" array)
 
 ### "case_preload uses reserved property"
 Reserved words cannot be used in case_preload values either. Remove the preload entry.

@@ -14,7 +14,7 @@ const JAVA_SEARCH_PATHS = [
   'C:\\Program Files\\Java\\jdk-17\\bin\\java',
 ]
 
-function findJava(): string | null {
+export function findJava(): string | null {
   // Check JAVA_HOME first
   const javaHome = process.env.JAVA_HOME
   if (javaHome) {
@@ -32,6 +32,27 @@ function findJava(): string | null {
 
   // Fall back to 'java' on PATH
   return 'java'
+}
+
+export async function checkJavaAvailable(): Promise<{ available: boolean; version?: string }> {
+  const javaCmd = findJava()
+  if (!javaCmd) return { available: false }
+
+  return new Promise((resolve) => {
+    const proc = spawn(javaCmd, ['-version'], { timeout: 5000, windowsHide: true })
+    let output = ''
+    proc.stderr.on('data', (d) => { output += d.toString() })
+    proc.stdout.on('data', (d) => { output += d.toString() })
+    proc.on('close', (code) => {
+      if (code === 0) {
+        const match = output.match(/version\s+"([^"]+)"/)
+        resolve({ available: true, version: match?.[1] })
+      } else {
+        resolve({ available: false })
+      }
+    })
+    proc.on('error', () => resolve({ available: false }))
+  })
 }
 
 function findJarPath(userDataDir?: string): string {
