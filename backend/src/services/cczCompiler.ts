@@ -160,10 +160,14 @@ export class CczCompiler {
 
     const openCase = actions.open_case
     const updateCase = actions.update_case
+    const closeCase = actions.close_case
+    const subcases: any[] = actions.subcases || []
     const isCreate = openCase?.condition?.type === 'always'
     const isUpdate = updateCase?.condition?.type === 'always'
+    const isClose = closeCase?.condition?.type === 'always' || closeCase?.condition?.type === 'if'
+    const hasSubcases = subcases.length > 0
 
-    if (!isCreate && !isUpdate) return xform
+    if (!isCreate && !isUpdate && !isClose && !hasSubcases) return xform
 
     // Build case data element
     let caseChildren = ''
@@ -190,10 +194,54 @@ export class CczCompiler {
       }
     }
 
-    const caseBlock = `          <case>${caseChildren}\n          </case>`
+    if (isClose) {
+      caseChildren += '\n            <close/>'
+      if (closeCase.condition.type === 'if' && closeCase.condition.question) {
+        const qPath = this.validateXFormPath(closeCase.condition.question)
+        const answer = closeCase.condition.answer || ''
+        binds.push(`      <bind nodeset="/data/case/close" relevant="${qPath} = '${answer}'"/>`)
+      }
+    }
 
-    // Insert case block into <data> element (before closing </data>)
-    xform = xform.replace(/(<\/data>)/, `\n${caseBlock}\n        $1`)
+    if (isCreate || isUpdate || isClose) {
+      const caseBlock = `          <case>${caseChildren}\n          </case>`
+      xform = xform.replace(/(<\/data>)/, `\n${caseBlock}\n        $1`)
+    }
+
+    // Subcases — each gets its own case element
+    for (let sIdx = 0; sIdx < subcases.length; sIdx++) {
+      const sc = subcases[sIdx]
+      if (sc.condition?.type !== 'always') continue
+
+      const elName = `subcase_${sIdx}`
+      const repeatCtx = sc.repeat_context || ''
+      const basePath = repeatCtx ? `${repeatCtx}/${elName}` : `/data/${elName}`
+
+      let scChildren = ''
+      scChildren += '\n            <create>\n              <case_type/>\n              <case_name/>\n              <owner_id/>\n            </create>'
+      binds.push(`      <bind nodeset="${basePath}/create/case_type" calculate="'${this.validateCaseType(sc.case_type)}'"/>`)
+      const namePath = sc.name_update?.question_path || `${basePath}/name`
+      binds.push(`      <bind nodeset="${basePath}/create/case_name" calculate="${this.validateXFormPath(namePath)}"/>`)
+      binds.push(`      <bind nodeset="${basePath}/create/owner_id" calculate="instance('commcaresession')/session/context/userid"/>`)
+
+      // Parent index
+      scChildren += `\n            <index>\n              <parent case_type="${this.validateCaseType(caseType)}" relationship="${sc.relationship || 'child'}"/>\n            </index>`
+
+      // Child case properties
+      if (sc.case_properties && Object.keys(sc.case_properties).length > 0) {
+        const props = Object.entries(sc.case_properties)
+        const propElements = props.map(([p]) => `              <${this.validatePropertyName(p)}/>`).join('\n')
+        scChildren += `\n            <update>\n${propElements}\n            </update>`
+        for (const [prop, mapping] of props) {
+          const validProp = this.validatePropertyName(prop)
+          const qPath = (mapping as any).question_path || `/data/${prop}`
+          binds.push(`      <bind nodeset="${basePath}/update/${validProp}" calculate="${this.validateXFormPath(qPath)}"/>`)
+        }
+      }
+
+      const scBlock = `          <${elName}>${scChildren}\n          </${elName}>`
+      xform = xform.replace(/(<\/data>)/, `\n${scBlock}\n        $1`)
+    }
 
     // Insert case binds after the last existing <bind>
     const bindStr = binds.join('\n')

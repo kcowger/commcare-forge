@@ -9,6 +9,9 @@ const RESERVED_CASE_PROPERTIES = new Set([
   'user_id', 'xform_id', 'name'
 ])
 
+/** Media/binary question types — cannot be saved as case properties */
+const MEDIA_QUESTION_TYPES = new Set(['image', 'audio', 'video', 'signature'])
+
 /**
  * Compact format that Claude outputs — contains only the variable parts.
  * The expander converts this into the full HQ import JSON with all boilerplate.
@@ -25,6 +28,19 @@ export interface CompactModule {
   case_list_columns?: { field: string; header: string }[]
 }
 
+export interface CompactChildCase {
+  /** The case_type of the child case (e.g. "referral", "pregnancy") */
+  case_type: string
+  /** Which question's value becomes the child case name */
+  case_name_field: string
+  /** Map of child case property name → question id */
+  case_properties?: Record<string, string>
+  /** "child" (default) or "extension" — extension prevents parent from closing */
+  relationship?: 'child' | 'extension'
+  /** If inside a repeat group, the repeat group question id (one child case per repeat entry) */
+  repeat_context?: string
+}
+
 export interface CompactForm {
   name: string
   /** "registration" = creates a new case, "followup" = updates existing case, "survey" = no case management */
@@ -35,6 +51,10 @@ export interface CompactForm {
   case_properties?: Record<string, string>
   /** Map of question id → case property for loading from case (followup forms only) */
   case_preload?: Record<string, string>
+  /** Close the parent case. true = always close, {question, answer} = conditional close (followup only) */
+  close_case?: boolean | { question: string; answer: string }
+  /** Create child/sub-cases linked to the parent case */
+  child_cases?: CompactChildCase[]
   questions: CompactQuestion[]
 }
 
@@ -361,8 +381,8 @@ function getXsdType(type: string): string | null {
 
 /** Build form actions based on form type and case config. Filters reserved words. */
 function buildFormActions(form: CompactForm, caseType: string): any {
-  const neverCondition = { type: 'never', question: null, answer: null, operator: null, doc_type: 'FormActionCondition' }
-  const alwaysCondition = { type: 'always', question: null, answer: null, operator: null, doc_type: 'FormActionCondition' }
+  const neverCondition: Record<string, any> = { type: 'never', question: null, answer: null, operator: null, doc_type: 'FormActionCondition' }
+  const alwaysCondition: Record<string, any> = { type: 'always', question: null, answer: null, operator: null, doc_type: 'FormActionCondition' }
 
   const base = {
     doc_type: 'FormActions',
@@ -379,7 +399,7 @@ function buildFormActions(form: CompactForm, caseType: string): any {
     },
     close_case: { doc_type: 'FormAction', condition: { ...neverCondition } },
     case_preload: { doc_type: 'PreloadAction', preload: {}, condition: { ...neverCondition } },
-    subcases: [],
+    subcases: [] as any[],
     usercase_preload: { doc_type: 'PreloadAction', preload: {}, condition: { ...neverCondition } },
     usercase_update: { doc_type: 'UpdateCaseAction', update: {}, condition: { ...neverCondition } },
     load_from_form: { doc_type: 'PreloadAction', preload: {}, condition: { ...neverCondition } }
@@ -389,12 +409,25 @@ function buildFormActions(form: CompactForm, caseType: string): any {
     return base
   }
 
-  // Build a safe update map, filtering out reserved property names
+  // Build a safe update map, filtering out reserved property names and media questions
   function buildSafeUpdateMap(caseProperties: Record<string, string> | undefined): Record<string, any> {
     const updateMap: Record<string, any> = {}
     if (!caseProperties) return updateMap
+    // Build a lookup of question id → type for media filtering
+    function getQuestionType(questions: CompactQuestion[], id: string): string | undefined {
+      for (const q of questions) {
+        if (q.id === id) return q.type
+        if ((q.type === 'group' || q.type === 'repeat') && q.children) {
+          const t = getQuestionType(q.children, id)
+          if (t) return t
+        }
+      }
+      return undefined
+    }
     for (const [caseProp, questionId] of Object.entries(caseProperties)) {
       if (RESERVED_CASE_PROPERTIES.has(caseProp)) continue // skip reserved words
+      const qType = getQuestionType(form.questions || [], questionId)
+      if (qType && MEDIA_QUESTION_TYPES.has(qType)) continue // skip media/binary questions
       updateMap[caseProp] = { question_path: `/data/${questionId}`, update_mode: 'always' }
     }
     return updateMap
@@ -433,6 +466,56 @@ function buildFormActions(form: CompactForm, caseType: string): any {
         base.case_preload.preload = preloadMap
       }
     }
+  }
+
+  // Close case (followup forms only)
+  if (form.type === 'followup' && form.close_case) {
+    if (form.close_case === true) {
+      base.close_case = { doc_type: 'FormAction', condition: { ...alwaysCondition } }
+    } else if (typeof form.close_case === 'object' && form.close_case.question && form.close_case.answer) {
+      base.close_case = {
+        doc_type: 'FormAction',
+        condition: {
+          type: 'if',
+          question: `/data/${form.close_case.question}`,
+          answer: form.close_case.answer,
+          operator: '=',
+          doc_type: 'FormActionCondition'
+        }
+      }
+    }
+  }
+
+  // Child cases / subcases
+  if (form.child_cases && form.child_cases.length > 0) {
+    base.subcases = form.child_cases.map((child) => {
+      const childProps: Record<string, any> = {}
+      if (child.case_properties) {
+        for (const [caseProp, questionId] of Object.entries(child.case_properties)) {
+          if (RESERVED_CASE_PROPERTIES.has(caseProp)) continue
+          const basePath = child.repeat_context
+            ? `/data/${child.repeat_context}/${questionId}`
+            : `/data/${questionId}`
+          childProps[caseProp] = { question_path: basePath, update_mode: 'always' }
+        }
+      }
+
+      const nameFieldPath = child.repeat_context
+        ? `/data/${child.repeat_context}/${child.case_name_field}`
+        : `/data/${child.case_name_field}`
+
+      return {
+        doc_type: 'OpenSubCaseAction',
+        case_type: child.case_type,
+        name_update: { question_path: nameFieldPath, update_mode: 'always' },
+        reference_id: '',
+        case_properties: childProps,
+        repeat_context: child.repeat_context ? `/data/${child.repeat_context}` : '',
+        relationship: child.relationship || 'child',
+        close_condition: { ...neverCondition },
+        condition: { ...alwaysCondition }
+      }
+    })
   }
 
   return base
@@ -581,6 +664,18 @@ export function validateCompact(compact: CompactApp): string[] {
         return ids
       }
 
+      // Find a question by id (recursively searching groups/repeats)
+      function findQuestionById(questions: CompactQuestion[], id: string): CompactQuestion | undefined {
+        for (const q of questions) {
+          if (q.id === id) return q
+          if ((q.type === 'group' || q.type === 'repeat') && q.children) {
+            const found = findQuestionById(q.children, id)
+            if (found) return found
+          }
+        }
+        return undefined
+      }
+
       // Check case_name_field refers to a valid question
       if (form.type === 'registration' && form.case_name_field) {
         const questionIds = collectQuestionIds(form.questions || [])
@@ -598,12 +693,17 @@ export function validateCompact(compact: CompactApp): string[] {
         }
       }
 
-      // Check case_properties values refer to valid question ids
+      // Check case_properties values refer to valid question ids and are not media types
       if (form.case_properties) {
         const questionIds = collectQuestionIds(form.questions || [])
         for (const [prop, qId] of Object.entries(form.case_properties)) {
           if (!questionIds.includes(qId)) {
             errors.push(`"${form.name}" case property "${prop}" maps to question "${qId}" which doesn't exist`)
+          } else {
+            const q = findQuestionById(form.questions || [], qId)
+            if (q && MEDIA_QUESTION_TYPES.has(q.type)) {
+              errors.push(`"${form.name}" case property "${prop}" maps to a ${q.type} question — media/binary questions cannot be saved as case properties`)
+            }
           }
         }
       }
@@ -617,6 +717,66 @@ export function validateCompact(compact: CompactApp): string[] {
           }
           if (RESERVED_CASE_PROPERTIES.has(caseProp)) {
             errors.push(`"${form.name}" case_preload uses reserved property "${caseProp}" — use a custom property name instead`)
+          }
+        }
+      }
+
+      // Validate close_case
+      if (form.close_case) {
+        if (form.type !== 'followup') {
+          errors.push(`"${form.name}" has close_case but is not a followup form — only followup forms can close cases`)
+        }
+        if (typeof form.close_case === 'object') {
+          const cc = form.close_case as { question: string; answer: string }
+          if (!cc.question) {
+            errors.push(`"${form.name}" close_case condition is missing "question"`)
+          } else {
+            const questionIds = collectQuestionIds(form.questions || [])
+            if (!questionIds.includes(cc.question)) {
+              errors.push(`"${form.name}" close_case references question "${cc.question}" which doesn't exist`)
+            }
+          }
+          if (!cc.answer) {
+            errors.push(`"${form.name}" close_case condition is missing "answer"`)
+          }
+        }
+      }
+
+      // Validate child_cases
+      if (form.child_cases) {
+        const questionIds = collectQuestionIds(form.questions || [])
+        for (let cIdx = 0; cIdx < form.child_cases.length; cIdx++) {
+          const child = form.child_cases[cIdx]
+          const prefix = `"${form.name}" child_cases[${cIdx}]`
+
+          if (!child.case_type) {
+            errors.push(`${prefix} is missing case_type`)
+          }
+          if (!child.case_name_field) {
+            errors.push(`${prefix} is missing case_name_field`)
+          } else if (!questionIds.includes(child.case_name_field)) {
+            errors.push(`${prefix} case_name_field "${child.case_name_field}" doesn't match any question id`)
+          }
+          if (child.case_properties) {
+            for (const [prop, qId] of Object.entries(child.case_properties)) {
+              if (RESERVED_CASE_PROPERTIES.has(prop)) {
+                errors.push(`${prefix} uses reserved case property name "${prop}"`)
+              }
+              if (!questionIds.includes(qId)) {
+                errors.push(`${prefix} case property "${prop}" maps to question "${qId}" which doesn't exist`)
+              }
+            }
+          }
+          if (child.repeat_context) {
+            const repeatQ = (form.questions || []).find(q => q.id === child.repeat_context)
+            if (!repeatQ) {
+              errors.push(`${prefix} repeat_context "${child.repeat_context}" doesn't match any question id`)
+            } else if (repeatQ.type !== 'repeat') {
+              errors.push(`${prefix} repeat_context "${child.repeat_context}" is not a repeat group`)
+            }
+          }
+          if (child.relationship && !['child', 'extension'].includes(child.relationship)) {
+            errors.push(`${prefix} relationship must be "child" or "extension"`)
           }
         }
       }

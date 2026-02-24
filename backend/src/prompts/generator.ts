@@ -15,6 +15,8 @@ export const GENERATOR_PROMPT = `You generate CommCare app definitions in a comp
           "case_name_field": "question_id_for_case_name",
           "case_properties": { "case_prop": "question_id" },
           "case_preload": { "question_id": "case_prop" },
+          "close_case": true | {"question": "question_id", "answer": "value"},
+          "child_cases": [{"case_type": "child_type", "case_name_field": "question_id", "case_properties": {"prop": "question_id"}, "relationship": "child"}],
           "questions": [
             { "id": "field_id", "type": "text", "label": "Label", "required": true },
             { "id": "field_id", "type": "select1", "label": "Label", "options": [{"value": "v", "label": "L"}] }
@@ -44,10 +46,23 @@ export const GENERATOR_PROMPT = `You generate CommCare app definitions in a comp
 - **case_properties**: Map of case property name → question id. These question values get saved to the case.
   - Do NOT include the case_name_field here — it's saved automatically.
   - NEVER use reserved property names as keys (see list below).
+  - NEVER map media/binary questions (image, audio, video, signature) to case properties — CommCare cannot store binary data in case properties. Only map text, numeric, date, and select values.
 - **case_preload**: (followup only) Map of question id → case property name. Pre-fills form questions with existing case data when the form opens.
   - The question gets populated with the case property's current value.
   - To load the case name, use "case_name" as the value (reading reserved properties is fine).
   - If the user should be able to EDIT a preloaded value and save it back, include the same field in BOTH case_preload AND case_properties.
+- **close_case**: (followup only, optional) Closes the parent case when this form is submitted.
+  - Set to \`true\` for forms that ALWAYS close the case (e.g., dedicated "Close Case" or "Discharge" forms).
+  - Set to \`{"question": "question_id", "answer": "value"}\` for CONDITIONAL close — the case closes only when that question's answer matches the value.
+  - Omit entirely if the form should NOT close the case (default).
+  - Only valid on "followup" forms (you must select a case before you can close it).
+- **child_cases**: (optional) Creates child/sub-cases linked to the current case. Array of objects:
+  - "case_type": (required) The child case type in snake_case (e.g. "referral", "pregnancy", "household_member")
+  - "case_name_field": (required) Question id whose value becomes the child case name
+  - "case_properties": (optional) Map of child case property name → question id
+  - "relationship": (optional) "child" (default) or "extension". Use "extension" when the child should prevent the parent from being closed.
+  - "repeat_context": (optional) Question id of a repeat group — creates one child case per repeat entry.
+  - Valid on both "registration" and "followup" forms. The parent case index is set automatically.
 - **questions**: Array of questions in the form.
 
 ### Question
@@ -104,6 +119,32 @@ Do NOT try to preload case_name — the case name is already shown when the user
 - Groups of related questions shown together → "group" with "children"
 - Repeating entries (multiple children, multiple visits) → "repeat" with "children"
 - ONLY use "text" for truly free-text fields: names, addresses, notes, descriptions, comments
+
+## Case Lifecycle — Closing Cases and Creating Child Cases
+
+Think about the FULL lifecycle of a case. Don't just register and update — recognize when cases should close and when child cases should be created.
+
+### When to close cases — set close_case on followup forms
+Recognize these patterns from form names and user requests:
+- Dedicated close/end forms: "Close Case", "Discharge Patient", "Exit Program", "Archive Record", "End Treatment" → close_case: true
+- Death or final outcome forms: "Death Notification", "Final Assessment", "Case Resolution" → close_case: true
+- Forms with outcome questions where some answers mean the case is done:
+  - "Outcome" with "discharged", "deceased", "transferred out", "completed" → close_case: {"question": "outcome", "answer": "discharged"}
+  - "Program Status" with "graduated", "dropped out", "completed" → conditional close on the exit answer
+- User says words like "close", "discharge", "exit", "end", "archive", "complete", "finish", "terminate", "deactivate" about a form → use close_case
+- If a form ALWAYS closes the case (no conditional logic needed), use close_case: true
+- If only SOME outcomes close the case, use close_case: {"question": "id", "answer": "closing_value"} — pick the one closing answer, or use close_case: true with a required confirmation question
+
+### When to create child cases — set child_cases
+Recognize these patterns:
+- "Register X under Y" (e.g., "register a pregnancy under a mother") → child case type "pregnancy" on the parent "mother" form
+- "Add a referral" → child case type "referral"
+- "Register household members" → child cases in a repeat group (set repeat_context)
+- "Create a visit record / encounter" → child case type "visit"
+- "Log a pregnancy / immunization / service" → child case type for the sub-entity
+- Any time the user describes an entity that belongs to / is owned by the parent case
+- If multiple child entries are needed in one form submission, use a repeat group with repeat_context
+- Use "extension" relationship only when the child must prevent the parent from closing (e.g., active pregnancy prevents closing the mother case)
 
 ## Rules
 1. Every module with registration or followup forms MUST have a case_type.
@@ -169,6 +210,28 @@ Do NOT try to preload case_name — the case name is already shown when the user
             ]},
             {"id": "notes", "type": "text", "label": "Visit Notes"}
           ]
+        },
+        {
+          "name": "Discharge Patient",
+          "type": "followup",
+          "close_case": {"question": "confirm_discharge", "answer": "yes"},
+          "case_properties": {
+            "discharge_reason": "reason",
+            "discharge_date": "discharge_date"
+          },
+          "questions": [
+            {"id": "reason", "type": "select1", "label": "Reason for Discharge", "required": true, "options": [
+              {"value": "recovered", "label": "Recovered"},
+              {"value": "transferred", "label": "Transferred"},
+              {"value": "deceased", "label": "Deceased"},
+              {"value": "other", "label": "Other"}
+            ]},
+            {"id": "discharge_date", "type": "date", "label": "Discharge Date", "required": true},
+            {"id": "confirm_discharge", "type": "select1", "label": "Confirm Discharge?", "required": true, "options": [
+              {"value": "yes", "label": "Yes, close this case"},
+              {"value": "no", "label": "No, keep case open"}
+            ]}
+          ]
         }
       ],
       "case_list_columns": [
@@ -184,6 +247,7 @@ Do NOT try to preload case_name — the case name is already shown when the user
 In this example:
 - The registration form creates a patient case. patient_name becomes the case name. age, gender, phone are saved as case properties.
 - The follow-up form PRELOADS the current status and phone from the case into readonly fields. The worker sees existing data and fills in new visit details. visit_status and last_visit_date get saved back to the case.
+- The discharge form CONDITIONALLY closes the case — only when the user confirms "Yes". The discharge reason and date are saved to the case before closing.
 - The case name is NOT preloaded — it's already shown when the user selects the case from the list.
 - The case list shows age, gender, and status columns (name is shown automatically by HQ).
 

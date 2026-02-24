@@ -527,4 +527,414 @@ describe('expandToHqJson', () => {
     const errors = validateCompact(app)
     expect(errors).toHaveLength(0)
   })
+
+  // --- close_case validation ---
+
+  it('allows close_case: true on followup form', () => {
+    const app: CompactApp = {
+      app_name: 'Test',
+      modules: [{
+        name: 'Mod',
+        case_type: 'patient',
+        forms: [{
+          name: 'Close',
+          type: 'followup',
+          close_case: true,
+          questions: [{ id: 'reason', type: 'text', label: 'Reason' }]
+        }]
+      }]
+    }
+    const errors = validateCompact(app)
+    expect(errors).toHaveLength(0)
+  })
+
+  it('errors on close_case on registration form', () => {
+    const app: CompactApp = {
+      app_name: 'Test',
+      modules: [{
+        name: 'Mod',
+        case_type: 'patient',
+        forms: [{
+          name: 'Register',
+          type: 'registration',
+          case_name_field: 'name',
+          close_case: true,
+          questions: [{ id: 'name', type: 'text', label: 'Name' }]
+        }]
+      }]
+    }
+    const errors = validateCompact(app)
+    expect(errors).toContainEqual(expect.stringContaining('not a followup'))
+  })
+
+  it('errors on close_case on survey form', () => {
+    const app: CompactApp = {
+      app_name: 'Test',
+      modules: [{
+        name: 'Mod',
+        forms: [{
+          name: 'Survey',
+          type: 'survey',
+          close_case: true,
+          questions: [{ id: 'q', type: 'text', label: 'Q' }]
+        }]
+      }]
+    }
+    const errors = validateCompact(app)
+    expect(errors).toContainEqual(expect.stringContaining('not a followup'))
+  })
+
+  it('validates conditional close_case with valid question', () => {
+    const app: CompactApp = {
+      app_name: 'Test',
+      modules: [{
+        name: 'Mod',
+        case_type: 'patient',
+        forms: [{
+          name: 'Discharge',
+          type: 'followup',
+          close_case: { question: 'outcome', answer: 'discharged' },
+          questions: [{
+            id: 'outcome', type: 'select1', label: 'Outcome',
+            options: [{ value: 'active', label: 'Active' }, { value: 'discharged', label: 'Discharged' }]
+          }]
+        }]
+      }]
+    }
+    const errors = validateCompact(app)
+    expect(errors).toHaveLength(0)
+  })
+
+  it('errors on conditional close_case referencing nonexistent question', () => {
+    const app: CompactApp = {
+      app_name: 'Test',
+      modules: [{
+        name: 'Mod',
+        case_type: 'patient',
+        forms: [{
+          name: 'Discharge',
+          type: 'followup',
+          close_case: { question: 'nonexistent', answer: 'yes' },
+          questions: [{ id: 'q', type: 'text', label: 'Q' }]
+        }]
+      }]
+    }
+    const errors = validateCompact(app)
+    expect(errors).toContainEqual(expect.stringContaining("doesn't exist"))
+  })
+
+  it('errors on conditional close_case missing answer', () => {
+    const app: CompactApp = {
+      app_name: 'Test',
+      modules: [{
+        name: 'Mod',
+        case_type: 'patient',
+        forms: [{
+          name: 'Close',
+          type: 'followup',
+          close_case: { question: 'q', answer: '' },
+          questions: [{ id: 'q', type: 'text', label: 'Q' }]
+        }]
+      }]
+    }
+    const errors = validateCompact(app)
+    expect(errors).toContainEqual(expect.stringContaining('missing "answer"'))
+  })
+
+  // --- child_cases validation ---
+
+  it('validates child_cases with valid fields', () => {
+    const app: CompactApp = {
+      app_name: 'Test',
+      modules: [{
+        name: 'Mod',
+        case_type: 'patient',
+        forms: [{
+          name: 'Referral',
+          type: 'followup',
+          child_cases: [{
+            case_type: 'referral',
+            case_name_field: 'reason',
+            case_properties: { facility: 'facility' }
+          }],
+          questions: [
+            { id: 'reason', type: 'text', label: 'Reason' },
+            { id: 'facility', type: 'text', label: 'Facility' }
+          ]
+        }]
+      }]
+    }
+    const errors = validateCompact(app)
+    expect(errors).toHaveLength(0)
+  })
+
+  it('errors on child_cases missing case_type', () => {
+    const app: CompactApp = {
+      app_name: 'Test',
+      modules: [{
+        name: 'Mod',
+        case_type: 'patient',
+        forms: [{
+          name: 'Form',
+          type: 'followup',
+          child_cases: [{ case_type: '', case_name_field: 'q' }],
+          questions: [{ id: 'q', type: 'text', label: 'Q' }]
+        }]
+      }]
+    }
+    const errors = validateCompact(app)
+    expect(errors).toContainEqual(expect.stringContaining('missing case_type'))
+  })
+
+  it('errors on child_cases with nonexistent case_name_field', () => {
+    const app: CompactApp = {
+      app_name: 'Test',
+      modules: [{
+        name: 'Mod',
+        case_type: 'patient',
+        forms: [{
+          name: 'Form',
+          type: 'followup',
+          child_cases: [{ case_type: 'ref', case_name_field: 'nonexistent' }],
+          questions: [{ id: 'q', type: 'text', label: 'Q' }]
+        }]
+      }]
+    }
+    const errors = validateCompact(app)
+    expect(errors).toContainEqual(expect.stringContaining("doesn't match"))
+  })
+
+  it('errors on child_cases with reserved property name', () => {
+    const app: CompactApp = {
+      app_name: 'Test',
+      modules: [{
+        name: 'Mod',
+        case_type: 'patient',
+        forms: [{
+          name: 'Form',
+          type: 'followup',
+          child_cases: [{ case_type: 'ref', case_name_field: 'q', case_properties: { status: 'q' } }],
+          questions: [{ id: 'q', type: 'text', label: 'Q' }]
+        }]
+      }]
+    }
+    const errors = validateCompact(app)
+    expect(errors).toContainEqual(expect.stringContaining('reserved'))
+  })
+
+  it('errors on child_cases repeat_context pointing to non-repeat question', () => {
+    const app: CompactApp = {
+      app_name: 'Test',
+      modules: [{
+        name: 'Mod',
+        case_type: 'patient',
+        forms: [{
+          name: 'Form',
+          type: 'followup',
+          child_cases: [{ case_type: 'ref', case_name_field: 'q', repeat_context: 'q' }],
+          questions: [{ id: 'q', type: 'text', label: 'Q' }]
+        }]
+      }]
+    }
+    const errors = validateCompact(app)
+    expect(errors).toContainEqual(expect.stringContaining('not a repeat group'))
+  })
+})
+
+// --- close_case expansion ---
+
+describe('expandToHqJson — close_case', () => {
+  it('close_case: true sets condition to always', () => {
+    const app: CompactApp = {
+      app_name: 'Close Test',
+      modules: [{
+        name: 'Patients',
+        case_type: 'patient',
+        forms: [{
+          name: 'Close Case',
+          type: 'followup',
+          close_case: true,
+          questions: [{ id: 'reason', type: 'text', label: 'Reason' }]
+        }]
+      }]
+    }
+    const hq = expandToHqJson(app)
+    const actions = hq.modules[0].forms[0].actions
+    expect(actions.close_case.condition.type).toBe('always')
+  })
+
+  it('conditional close_case sets condition type to if', () => {
+    const app: CompactApp = {
+      app_name: 'Conditional Close',
+      modules: [{
+        name: 'Patients',
+        case_type: 'patient',
+        forms: [{
+          name: 'Discharge',
+          type: 'followup',
+          close_case: { question: 'outcome', answer: 'discharged' },
+          questions: [{
+            id: 'outcome', type: 'select1', label: 'Outcome',
+            options: [{ value: 'active', label: 'Active' }, { value: 'discharged', label: 'Discharged' }]
+          }]
+        }]
+      }]
+    }
+    const hq = expandToHqJson(app)
+    const condition = hq.modules[0].forms[0].actions.close_case.condition
+    expect(condition.type).toBe('if')
+    expect(condition.question).toBe('/data/outcome')
+    expect(condition.answer).toBe('discharged')
+    expect(condition.operator).toBe('=')
+  })
+
+  it('omitted close_case keeps condition as never (backward compat)', () => {
+    const app: CompactApp = {
+      app_name: 'No Close',
+      modules: [{
+        name: 'Mod',
+        case_type: 'patient',
+        forms: [{
+          name: 'Followup',
+          type: 'followup',
+          questions: [{ id: 'notes', type: 'text', label: 'Notes' }]
+        }]
+      }]
+    }
+    const hq = expandToHqJson(app)
+    expect(hq.modules[0].forms[0].actions.close_case.condition.type).toBe('never')
+  })
+})
+
+// --- child_cases expansion ---
+
+describe('expandToHqJson — child_cases', () => {
+  it('generates subcases array with OpenSubCaseAction structure', () => {
+    const app: CompactApp = {
+      app_name: 'Child Case Test',
+      modules: [{
+        name: 'Patients',
+        case_type: 'patient',
+        forms: [{
+          name: 'Create Referral',
+          type: 'followup',
+          child_cases: [{
+            case_type: 'referral',
+            case_name_field: 'referral_reason',
+            case_properties: { facility: 'facility', urgency: 'urgency' }
+          }],
+          questions: [
+            { id: 'referral_reason', type: 'text', label: 'Reason' },
+            { id: 'facility', type: 'text', label: 'Facility' },
+            { id: 'urgency', type: 'select1', label: 'Urgency', options: [{ value: 'low', label: 'Low' }, { value: 'high', label: 'High' }] }
+          ]
+        }]
+      }]
+    }
+    const hq = expandToHqJson(app)
+    const subcases = hq.modules[0].forms[0].actions.subcases
+    expect(subcases).toHaveLength(1)
+    expect(subcases[0].doc_type).toBe('OpenSubCaseAction')
+    expect(subcases[0].case_type).toBe('referral')
+    expect(subcases[0].name_update.question_path).toBe('/data/referral_reason')
+    expect(subcases[0].case_properties.facility.question_path).toBe('/data/facility')
+    expect(subcases[0].case_properties.urgency.question_path).toBe('/data/urgency')
+    expect(subcases[0].relationship).toBe('child')
+    expect(subcases[0].condition.type).toBe('always')
+  })
+
+  it('filters reserved property names from child case properties', () => {
+    const app: CompactApp = {
+      app_name: 'Reserved Test',
+      modules: [{
+        name: 'Mod',
+        case_type: 'patient',
+        forms: [{
+          name: 'Form',
+          type: 'followup',
+          child_cases: [{
+            case_type: 'ref',
+            case_name_field: 'q',
+            case_properties: { status: 'q', ref_note: 'q' }
+          }],
+          questions: [{ id: 'q', type: 'text', label: 'Q' }]
+        }]
+      }]
+    }
+    const hq = expandToHqJson(app)
+    const props = hq.modules[0].forms[0].actions.subcases[0].case_properties
+    expect(props.status).toBeUndefined()
+    expect(props.ref_note).toBeDefined()
+  })
+
+  it('child_cases with repeat_context prefixes paths correctly', () => {
+    const app: CompactApp = {
+      app_name: 'Repeat Child Test',
+      modules: [{
+        name: 'Households',
+        case_type: 'household',
+        forms: [{
+          name: 'Register Members',
+          type: 'followup',
+          child_cases: [{
+            case_type: 'member',
+            case_name_field: 'member_name',
+            case_properties: { member_age: 'member_age' },
+            repeat_context: 'members'
+          }],
+          questions: [{
+            id: 'members', type: 'repeat', label: 'Household Members',
+            children: [
+              { id: 'member_name', type: 'text', label: 'Name' },
+              { id: 'member_age', type: 'int', label: 'Age' }
+            ]
+          }]
+        }]
+      }]
+    }
+    const hq = expandToHqJson(app)
+    const subcase = hq.modules[0].forms[0].actions.subcases[0]
+    expect(subcase.name_update.question_path).toBe('/data/members/member_name')
+    expect(subcase.case_properties.member_age.question_path).toBe('/data/members/member_age')
+    expect(subcase.repeat_context).toBe('/data/members')
+  })
+
+  it('child_cases with relationship: extension sets relationship field', () => {
+    const app: CompactApp = {
+      app_name: 'Extension Test',
+      modules: [{
+        name: 'Mod',
+        case_type: 'patient',
+        forms: [{
+          name: 'Form',
+          type: 'followup',
+          child_cases: [{
+            case_type: 'pregnancy',
+            case_name_field: 'q',
+            relationship: 'extension'
+          }],
+          questions: [{ id: 'q', type: 'text', label: 'Q' }]
+        }]
+      }]
+    }
+    const hq = expandToHqJson(app)
+    expect(hq.modules[0].forms[0].actions.subcases[0].relationship).toBe('extension')
+  })
+
+  it('no child_cases produces empty subcases (backward compat)', () => {
+    const app: CompactApp = {
+      app_name: 'No Children',
+      modules: [{
+        name: 'Mod',
+        case_type: 'patient',
+        forms: [{
+          name: 'Followup',
+          type: 'followup',
+          questions: [{ id: 'q', type: 'text', label: 'Q' }]
+        }]
+      }]
+    }
+    const hq = expandToHqJson(app)
+    expect(hq.modules[0].forms[0].actions.subcases).toEqual([])
+  })
 })

@@ -13,6 +13,8 @@ export const FIXER_PROMPT = `You fix CommCare app definitions in compact JSON fo
       "case_name_field": "question_id",
       "case_properties": { "case_prop": "question_id" },
       "case_preload": { "question_id": "case_prop" },
+      "close_case": true | {"question": "question_id", "answer": "value"},
+      "child_cases": [{"case_type": "child_type", "case_name_field": "question_id", "case_properties": {"prop": "question_id"}}],
       "questions": [
         { "id": "field_id", "type": "text", "label": "Label", "required": true },
         { "id": "field_id", "type": "select1", "label": "Label", "options": [{"value": "v", "label": "L"}] }
@@ -80,6 +82,30 @@ Form type must be "registration", "followup", or "survey".
 ### "case_preload uses reserved property"
 Reserved words cannot be used in case_preload values either. Remove the preload entry.
 Do NOT preload case_name — the case name is already shown when the user selects the case.
+
+### "case property maps to a media/binary question"
+Media questions (image, audio, video, signature) cannot be saved as case properties — CommCare cannot store binary data in case properties. Remove the mapping.
+
+### "has close_case but is not a followup form"
+close_case can only be used on "followup" forms (you must select a case to close it). Either change the form type to "followup" or remove close_case.
+
+### "close_case references question which doesn't exist"
+The close_case condition's "question" field must match a question id in the form. Fix the question reference.
+
+### "close_case condition is missing answer"
+Conditional close_case needs both "question" and "answer" fields. Add the missing "answer" value.
+
+### "child_cases case_name_field doesn't match any question"
+Each child_case's case_name_field must point to a valid question id in the form. Fix the reference or add the question.
+
+### "child_cases case property maps to nonexistent question"
+A child_case's case_properties value references a question id not in the form. Fix the reference or add the question.
+
+### "child_cases uses reserved case property name"
+Child case properties follow the same reserved word rules. Rename the property (e.g. "status" → "referral_status").
+
+### "child_cases repeat_context is not a repeat group"
+The repeat_context must reference a question id of type "repeat" in the form. Fix the reference.
 
 ## Key Rules
 - Use "text" with "readonly": true for display-only preloaded fields, NOT "trigger"
