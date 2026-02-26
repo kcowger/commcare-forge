@@ -14,11 +14,11 @@ No coding required. No command line. No dependencies to install.
 
 ## Download
 
-Go to [Releases](../../releases) and download the installer for your platform:
+Go to the [latest release](https://github.com/kcowger/commcare-forge/releases/latest) and download the installer for your platform:
 
-- **Windows**: `commcare-forge-x.x.x-setup.exe`
-- **macOS**: `CommCare Forge-x.x.x.dmg`
-- **Linux**: `CommCare Forge-x.x.x.AppImage`
+- **Windows**: `.exe` installer
+- **macOS**: `.dmg` disk image
+- **Linux**: `.AppImage`
 
 ## Getting Started
 

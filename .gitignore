@@ -29,3 +29,4 @@ build/output/
 # Internal reference docs (not part of the app)
 COMMCARE_HQ_VALIDATION_RULES.md
 COMMCARE_FORGE_SPEC.md
+SPEC.md

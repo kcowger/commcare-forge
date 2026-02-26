@@ -1,6 +1,6 @@
 appId: org.commcareforge.app
 productName: CommCare Forge
-copyright: Copyright (c) 2025 CommCare Forge Contributors
+copyright: Copyright (c) 2026 Kai Cowger and Claude (Anthropic)
 
 publish:
   provider: github
