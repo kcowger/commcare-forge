@@ -36,53 +36,60 @@ export async function handleValidate(input: ValidateInput): Promise<ValidateResu
 }
 
 export async function handleBuild(input: BuildInput): Promise<BuildResult> {
-  // 1. Validate first
-  const validationErrors = validateCompact(input.compact_json)
-  if (validationErrors.length > 0) {
-    return { success: false, errors: validationErrors }
-  }
+  try {
+    // 1. Validate first
+    const validationErrors = validateCompact(input.compact_json)
+    if (validationErrors.length > 0) {
+      return { success: false, errors: validationErrors }
+    }
 
-  // 2. Expand to HQ JSON
-  const hqJson = expandToHqJson(input.compact_json)
+    // 2. Expand to HQ JSON
+    const hqJson = expandToHqJson(input.compact_json)
 
-  // 3. Auto-fix the expanded files
-  const autoFixer = new AutoFixer()
-  const files: Record<string, string> = {}
-  for (const [key, content] of Object.entries(hqJson._attachments || {})) {
-    files[key] = content as string
-  }
-  const { files: fixedFiles } = autoFixer.fix(files)
-  for (const [key, content] of Object.entries(fixedFiles)) {
-    hqJson._attachments[key] = content
-  }
+    // 3. Auto-fix the expanded files
+    const autoFixer = new AutoFixer()
+    const files: Record<string, string> = {}
+    for (const [key, content] of Object.entries(hqJson._attachments || {})) {
+      files[key] = content as string
+    }
+    const { files: fixedFiles } = autoFixer.fix(files)
+    for (const [key, content] of Object.entries(fixedFiles)) {
+      hqJson._attachments[key] = content
+    }
 
-  // 4. Validate the expanded HQ JSON
-  const hqValidator = new HqValidator()
-  const hqValidation = hqValidator.validate(fixedFiles)
-  if (!hqValidation.success) {
-    return { success: false, errors: hqValidation.errors }
-  }
+    // 4. Validate the expanded HQ JSON
+    const hqValidator = new HqValidator()
+    const hqValidation = hqValidator.validate(fixedFiles)
+    if (!hqValidation.success) {
+      return { success: false, errors: hqValidation.errors }
+    }
 
-  // 5. Compile to CCZ
-  const compiler = new CczCompiler()
-  const appName = input.compact_json.app_name
-  const cczTempPath = await compiler.compile(hqJson, appName)
+    // 5. Compile to CCZ
+    const compiler = new CczCompiler()
+    const appName = input.compact_json.app_name
+    const cczTempPath = await compiler.compile(hqJson, appName)
 
-  // 6. Write output files
-  const outputDir = resolve(process.cwd(), input.output_dir || 'commcare-output')
-  mkdirSync(outputDir, { recursive: true })
+    // 6. Write output files
+    const outputDir = resolve(process.cwd(), input.output_dir || 'commcare-output')
+    mkdirSync(outputDir, { recursive: true })
 
-  const sanitizedName = appName.replace(/[^a-zA-Z0-9-_ ]/g, '').trim()
-  const hqJsonPath = resolve(outputDir, `${sanitizedName}.hq.json`)
-  const cczPath = resolve(outputDir, `${sanitizedName}.ccz`)
+    const sanitizedName = appName.replace(/[^a-zA-Z0-9-_ ]/g, '').trim()
+    const hqJsonPath = resolve(outputDir, `${sanitizedName}.hq.json`)
+    const cczPath = resolve(outputDir, `${sanitizedName}.ccz`)
 
-  writeFileSync(hqJsonPath, JSON.stringify(hqJson, null, 2), 'utf-8')
-  copyFileSync(cczTempPath, cczPath)
+    writeFileSync(hqJsonPath, JSON.stringify(hqJson, null, 2), 'utf-8')
+    copyFileSync(cczTempPath, cczPath)
 
-  return {
-    success: true,
-    ccz_path: cczPath,
-    hq_json_path: hqJsonPath
+    return {
+      success: true,
+      ccz_path: cczPath,
+      hq_json_path: hqJsonPath
+    }
+  } catch (err) {
+    return {
+      success: false,
+      errors: [err instanceof Error ? err.message : String(err)]
+    }
   }
 }
 
