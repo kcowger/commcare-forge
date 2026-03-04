@@ -1,12 +1,22 @@
-import { readFileSync } from 'fs'
+import { readFileSync, existsSync } from 'fs'
 import { resolve, dirname } from 'path'
-import { fileURLToPath } from 'url'
 
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = dirname(__filename)
+// Find repo root by walking up from __dirname looking for the docs directory.
+// This works both in source (mcp-server/src/) and compiled output (mcp-server/dist/mcp-server/src/).
+function findRepoRoot(startDir: string): string {
+  let dir = startDir
+  for (let i = 0; i < 10; i++) {
+    if (existsSync(resolve(dir, 'docs', 'commcare-reference.md'))) {
+      return dir
+    }
+    const parent = dirname(dir)
+    if (parent === dir) break
+    dir = parent
+  }
+  throw new Error('Could not find repo root from ' + startDir)
+}
 
-// Resolve paths relative to repo root (mcp-server/src/../../)
-const REPO_ROOT = resolve(__dirname, '..', '..')
+const REPO_ROOT = findRepoRoot(__dirname)
 
 interface McpResource {
   uri: string
