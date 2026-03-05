@@ -383,4 +383,23 @@ describe('getToolDefinitions', () => {
     expect(build!.inputSchema.required).toContain('compact_json')
     expect(build!.inputSchema.properties.output_dir).toBeDefined()
   })
+
+  it('compact_json schema has real structure (not just {type: "object"})', () => {
+    const tools = getToolDefinitions()
+    const validate = tools.find(t => t.name === 'validate_commcare_app')!
+    const compactSchema = validate.inputSchema.properties.compact_json as any
+    // Should have nested properties describing the app structure
+    expect(compactSchema.properties).toBeDefined()
+    expect(compactSchema.properties.app_name).toBeDefined()
+    expect(compactSchema.properties.modules).toBeDefined()
+    expect(compactSchema.properties.modules.type).toBe('array')
+  })
+
+  it('compact_json schema includes field descriptions for LLM guidance', () => {
+    const tools = getToolDefinitions()
+    const validate = tools.find(t => t.name === 'validate_commcare_app')!
+    const compactSchema = validate.inputSchema.properties.compact_json as any
+    expect(compactSchema.properties.app_name.description).toBeDefined()
+    expect(compactSchema.properties.modules.description).toBeDefined()
+  })
 })

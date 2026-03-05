@@ -1,12 +1,39 @@
+/**
+ * Orchestrates the full app generation pipeline:
+ *
+ *   1. Ask Claude to generate a compact JSON app definition (via tool use)
+ *   2. Validate the compact JSON against CommCare rules
+ *   3. If validation fails, ask Claude (Haiku) to fix errors — loop until clean or stuck
+ *   4. Expand compact JSON into full HQ import JSON (with XForm XML, suite.xml, etc.)
+ *   5. Export the HQ JSON and compile it into a .ccz file
+ *
+ * Both generation (step 1) and fixing (step 3) use `sendOneShotWithTool` to force
+ * structured output. This eliminates the old regex-based JSON extraction from
+ * markdown code blocks and the truncated-JSON repair logic that came with it.
+ */
 import type { AppDefinition, GenerationProgress } from '../types'
 import { ClaudeService } from './claude'
 import { CczCompiler } from './cczCompiler'
 import { AppExporter } from './appExporter'
 import { BuildLogger } from './buildLogger'
-import { GENERATOR_PROMPT } from '../prompts/generator'
-import { FIXER_PROMPT } from '../prompts/fixer'
+import { GENERATOR_TOOL_USE_PROMPT } from '../prompts/generatorToolUse'
+import { FIXER_TOOL_USE_PROMPT } from '../prompts/fixerToolUse'
+import { getCompactAppJsonSchema } from '../schemas/compactApp'
 import { expandToHqJson, validateCompact } from './hqJsonExpander'
 import type { CompactApp } from './hqJsonExpander'
+
+/**
+ * Tool definition passed to Claude's API via sendOneShotWithTool().
+ * The input_schema is the full JSON Schema generated from our Zod schema,
+ * so Claude sees every field, its type, and its description when deciding
+ * what to output. `tool_choice` forces Claude to call this tool rather
+ * than responding with plain text.
+ */
+const SUBMIT_TOOL = {
+  name: 'submit_app_definition',
+  description: 'Submit the complete CommCare app definition in compact JSON format.',
+  input_schema: getCompactAppJsonSchema() as Record<string, unknown>
+}
 
 export class AppGenerator {
   private claudeService: ClaudeService
@@ -48,25 +75,25 @@ export class AppGenerator {
     logger: BuildLogger
   ): Promise<{ success: boolean; appDefinition?: AppDefinition; cczPath?: string; exportPath?: string; hqJsonPath?: string; errors?: string[] }> {
 
-    // Step 1: Generate compact app definition
+    // Step 1: Generate compact app definition via tool use
     report('generating', 'Generating app...', 0)
     logger.logSection('GENERATION')
-    logger.log('Sending generation request to Claude...')
+    logger.log('Sending generation request to Claude (tool use)...')
 
-    const message = `Here is the full conversation with the user about the app they want:\n\n${conversationContext}\n\nBased on this conversation, generate the compact app definition JSON. App name: "${resolvedAppName}".`
-    const response = await this.claudeService.sendOneShot(GENERATOR_PROMPT, message, (chunk) => {
-      // streaming callback
-    }, { maxTokens: 64000 })
+    const message = `Here is the full conversation with the user about the app they want:\n\n${conversationContext}\n\nBased on this conversation, generate the compact app definition. App name: "${resolvedAppName}".`
 
-    logger.log(`Claude response received (${response.length} chars)`)
-
-    let compact = parseCompactFromResponse(response)
-    if (!compact) {
-      logger.log('FATAL: Failed to parse compact JSON from Claude response')
-      logger.logSection('RAW RESPONSE (first 3000 chars)')
-      logger.log(response.substring(0, 3000))
-      report('failed', 'Failed to parse app definition from Claude response', 0)
-      return { success: false, errors: ['Failed to parse app definition. Claude may not have returned valid JSON.'] }
+    let compact: CompactApp
+    try {
+      compact = await this.claudeService.sendOneShotWithTool<CompactApp>(
+        GENERATOR_TOOL_USE_PROMPT, message, SUBMIT_TOOL,
+        () => { /* streaming progress — UI shows spinner */ },
+        { maxTokens: 64000 }
+      )
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err)
+      logger.log(`FATAL: Tool use generation failed: ${errMsg}`)
+      report('failed', 'Failed to generate app definition from Claude', 0)
+      return { success: false, errors: [`Generation failed: ${errMsg}`] }
     }
 
     // Override app name if provided
@@ -74,7 +101,11 @@ export class AppGenerator {
 
     logger.log(`Parsed compact: ${compact.modules?.length || 0} modules, ${compact.modules?.reduce((sum: number, m: any) => sum + (m.forms?.length || 0), 0) || 0} forms`)
 
-    // Step 2: Validate compact + fix loop
+    // Step 2: Validate → fix loop
+    // If the compact JSON has validation errors, we send it to Haiku for fixing.
+    // We track recent error signatures to detect when we're stuck in a loop
+    // (same errors repeating). After MAX_STUCK_REPEATS identical error sets,
+    // we give up and export whatever we have.
     const recentErrorSignatures: string[] = []
     const MAX_STUCK_REPEATS = 3
     let attempt = 0
@@ -112,7 +143,8 @@ export class AppGenerator {
         return await this.exportResults(hqJson, resolvedAppName, logger)
       }
 
-      // Stuck detection
+      // Stuck detection: hash errors into a signature, keep a sliding window of
+      // the last N signatures. If all N are identical, the fixer isn't making progress.
       const sig = errors.slice().sort().join('|||')
       recentErrorSignatures.push(sig)
       if (recentErrorSignatures.length > MAX_STUCK_REPEATS) recentErrorSignatures.shift()
@@ -129,38 +161,33 @@ export class AppGenerator {
         }
       }
 
-      // Fix with Claude
+      // Fix with Claude via tool use
       logger.logSection(`FIX ATTEMPT ${attempt}`)
       const errorPreview = errors.slice(0, 3).join('; ').substring(0, 150)
       report('fixing', `Fixing: ${errorPreview}`, attempt)
 
       const compactStr = JSON.stringify(compact, null, 2)
-      const fixMessage = `## Validation Errors\n${errors.join('\n')}\n\n## Current App Definition\n\`\`\`json\n${compactStr}\n\`\`\``
+      const fixMessage = `## Validation Errors\n${errors.join('\n')}\n\n## Current App Definition\n${compactStr}`
 
-      logger.log(`Sending fix request to Claude (Haiku)... (${fixMessage.length} chars)`)
+      logger.log(`Sending fix request to Claude (Haiku, tool use)... (${fixMessage.length} chars)`)
 
-      let charCount = 0
-      const fixResponse = await this.claudeService.sendOneShot(FIXER_PROMPT, fixMessage, () => {
-        charCount++
-        if (charCount % 200 === 0) {
-          report('fixing', `Fixing issues (attempt ${attempt})...`, attempt)
-        }
-      }, { model: 'claude-haiku-4-5-20251001', maxTokens: 32768 })
-
-      logger.log(`Fix response received (${fixResponse.length} chars)`)
-
-      const fixedCompact = parseCompactFromResponse(fixResponse)
-      if (!fixedCompact) {
-        logger.log('FATAL: Failed to parse fixed compact JSON')
-        logger.logSection('RAW FIX RESPONSE (first 3000 chars)')
-        logger.log(fixResponse.substring(0, 3000))
-        report('failed', 'Failed to parse fixed app definition from Claude response', attempt)
+      let fixedCompact: CompactApp
+      try {
+        fixedCompact = await this.claudeService.sendOneShotWithTool<CompactApp>(
+          FIXER_TOOL_USE_PROMPT, fixMessage, SUBMIT_TOOL,
+          () => { /* streaming progress */ },
+          { model: 'claude-haiku-4-5-20251001', maxTokens: 32768 }
+        )
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err)
+        logger.log(`FATAL: Tool use fix failed: ${errMsg}`)
+        report('failed', 'Failed to parse fixed app definition from Claude', attempt)
         try {
           const hqJson = expandToHqJson(compact)
           const result = await this.exportResults(hqJson, resolvedAppName, logger)
-          return { ...result, success: false, errors: ['Failed to parse fixed app definition from Claude'] }
+          return { ...result, success: false, errors: [`Fix failed: ${errMsg}`] }
         } catch {
-          return { success: false, errors: ['Failed to parse fixed app definition from Claude'] }
+          return { success: false, errors: [`Fix failed: ${errMsg}`] }
         }
       }
 
@@ -260,6 +287,7 @@ export class AppGenerator {
     }
   }
 
+  /** Best-effort app name extraction from the first user message in the conversation. */
   private inferAppName(context: string): string {
     const firstLine = context.split('\n').find(l => l.startsWith('User:'))
     if (firstLine) {
@@ -275,102 +303,4 @@ export class AppGenerator {
     }
     return 'CommCare App'
   }
-}
-
-// --- Exported for testing ---
-
-function looksLikeCompact(obj: any): boolean {
-  return obj && typeof obj === 'object' && Array.isArray(obj.modules) && obj.modules.length > 0
-}
-
-/** Attempt to repair truncated JSON by closing unclosed brackets/braces. */
-export function repairTruncatedJson(json: string): string {
-  let inString = false
-  let lastCompleteValueEnd = -1
-  const stack: string[] = []
-
-  for (let i = 0; i < json.length; i++) {
-    const ch = json[i]
-    if (inString) {
-      if (ch === '\\') { i++; continue }
-      if (ch === '"') { inString = false; lastCompleteValueEnd = i }
-      continue
-    }
-    if (ch === '"') { inString = true; continue }
-    if (ch === '{') { stack.push('}'); continue }
-    if (ch === '[') { stack.push(']'); continue }
-    if (ch === '}' || ch === ']') { stack.pop(); lastCompleteValueEnd = i; continue }
-    if (/[\d.eE+\-]/.test(ch) || 'truefalsnul'.includes(ch)) { lastCompleteValueEnd = i }
-  }
-
-  let s: string
-  if (inString || stack.length > 0) {
-    s = (inString && lastCompleteValueEnd >= 0) ? json.substring(0, lastCompleteValueEnd + 1) : json
-  } else {
-    s = json
-  }
-
-  s = s.replace(/[\s,]*$/, '')
-  s = s.replace(/,\s*"[^"]*"\s*$/, '')
-  s = s.replace(/\{\s*"[^"]*"\s*$/, '{')
-
-  const finalStack: string[] = []
-  inString = false
-  for (let i = 0; i < s.length; i++) {
-    if (s[i] === '\\' && inString) { i++; continue }
-    if (s[i] === '"') { inString = !inString; continue }
-    if (inString) continue
-    if (s[i] === '{') finalStack.push('}')
-    else if (s[i] === '[') finalStack.push(']')
-    else if (s[i] === '}' || s[i] === ']') finalStack.pop()
-  }
-
-  while (finalStack.length > 0) { s += finalStack.pop() }
-  return s
-}
-
-/** Try to parse JSON as a compact app, with repair for truncation. */
-export function tryParseCompact(json: string): CompactApp | null {
-  try {
-    const parsed = JSON.parse(json)
-    if (looksLikeCompact(parsed)) return parsed as CompactApp
-  } catch { /* try repair */ }
-
-  const repaired = repairTruncatedJson(json)
-  if (repaired !== json) {
-    try {
-      const parsed = JSON.parse(repaired)
-      if (looksLikeCompact(parsed)) return parsed as CompactApp
-    } catch { /* give up */ }
-  }
-  return null
-}
-
-/** Parse compact app JSON from Claude response text. */
-export function parseCompactFromResponse(response: string): CompactApp | null {
-  const jsonBlocks = [...response.matchAll(/```json\s*\n([\s\S]*?)\n```/g)]
-  for (const match of jsonBlocks.reverse()) {
-    const result = tryParseCompact(match[1])
-    if (result) return result
-  }
-
-  const openBlock = response.match(/```json\s*\n([\s\S]+)/)
-  if (openBlock) {
-    const content = openBlock[1].replace(/\n```\s*$/, '')
-    const result = tryParseCompact(content)
-    if (result) return result
-  }
-
-  const braceStart = response.indexOf('{')
-  if (braceStart !== -1) {
-    const braceEnd = response.lastIndexOf('}')
-    if (braceEnd > braceStart) {
-      const result = tryParseCompact(response.substring(braceStart, braceEnd + 1))
-      if (result) return result
-    }
-    const result = tryParseCompact(response.substring(braceStart))
-    if (result) return result
-  }
-
-  return null
 }

@@ -1,7 +1,19 @@
+/**
+ * MCP tool handlers for validating and building CommCare apps.
+ *
+ * These are the actual implementations behind the MCP tools registered in index.ts.
+ * They share the same pipeline as the Electron app — validate compact JSON, expand
+ * to HQ format, auto-fix, validate the expanded XML, compile to .ccz.
+ *
+ * `getToolDefinitions()` returns plain JSON Schema tool definitions for non-MCP
+ * consumers (e.g. raw Anthropic API tool definitions). The MCP server itself uses
+ * the Zod schema directly via `server.tool()`.
+ */
 import { validateCompact, expandToHqJson } from '../../backend/src/services/hqJsonExpander'
 import { AutoFixer } from '../../backend/src/services/autoFixer'
 import { HqValidator } from '../../backend/src/services/hqValidator'
 import { CczCompiler } from '../../backend/src/services/cczCompiler'
+import { getCompactAppJsonSchema } from '../../backend/src/schemas/compactApp'
 import { mkdirSync, writeFileSync, copyFileSync } from 'fs'
 import { resolve } from 'path'
 import type { CompactApp } from '../../backend/src/services/hqJsonExpander'
@@ -35,6 +47,10 @@ export async function handleValidate(input: ValidateInput): Promise<ValidateResu
   return { valid: false, errors }
 }
 
+/**
+ * Full build pipeline: validate → expand → auto-fix → validate HQ XML → compile .ccz.
+ * Writes both the HQ JSON and .ccz to output_dir and returns their paths.
+ */
 export async function handleBuild(input: BuildInput): Promise<BuildResult> {
   try {
     // 1. Validate first
@@ -93,7 +109,15 @@ export async function handleBuild(input: BuildInput): Promise<BuildResult> {
   }
 }
 
+/**
+ * Returns tool definitions as plain JSON Schema objects.
+ * Used by non-MCP consumers that need raw tool definitions (e.g. tests,
+ * or if someone wanted to register these tools with the Anthropic API directly).
+ * The MCP server itself uses the Zod schema via server.tool() in index.ts.
+ */
 export function getToolDefinitions() {
+  const compactJsonSchema = getCompactAppJsonSchema()
+
   return [
     {
       name: 'validate_commcare_app',
@@ -101,10 +125,7 @@ export function getToolDefinitions() {
       inputSchema: {
         type: 'object' as const,
         properties: {
-          compact_json: {
-            type: 'object',
-            description: 'The compact app definition with app_name and modules array'
-          }
+          compact_json: compactJsonSchema
         },
         required: ['compact_json']
       }
@@ -115,10 +136,7 @@ export function getToolDefinitions() {
       inputSchema: {
         type: 'object' as const,
         properties: {
-          compact_json: {
-            type: 'object',
-            description: 'A validated compact app definition'
-          },
+          compact_json: compactJsonSchema,
           output_dir: {
             type: 'string',
             description: 'Output directory path. Defaults to ./commcare-output/'

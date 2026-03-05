@@ -5,6 +5,19 @@ import * as XLSX from 'xlsx'
 import { SYSTEM_PROMPT } from '../prompts/system'
 import type { FileAttachment, ConversationMessage } from '../types'
 
+/**
+ * Wrapper around the Anthropic SDK that manages conversation history and
+ * provides convenience methods for the different ways we talk to Claude:
+ *
+ * - `sendMessage` / `streamMessage` — multi-turn conversation (chat UI)
+ * - `sendOneShot` — single-turn text generation (no tool use)
+ * - `sendOneShotWithTool` — single-turn with forced tool use for structured output
+ *
+ * The Electron app creates one instance per conversation. The app generator
+ * uses `sendOneShotWithTool` for both initial generation and fix attempts,
+ * which guarantees Claude returns valid JSON matching the tool's input_schema
+ * instead of freeform text that needs regex parsing.
+ */
 export class ClaudeService {
   private client: Anthropic
   private model: string
@@ -88,6 +101,60 @@ export class ClaudeService {
     await stream.finalMessage()
 
     return fullText
+  }
+
+  /**
+   * Single-turn request that forces Claude to respond by calling a specific tool,
+   * guaranteeing structured JSON output matching the tool's input_schema.
+   *
+   * This replaces the old pattern of sendOneShot() + regex-parsing JSON from
+   * markdown code blocks. With `tool_choice: { type: 'tool', name }`, Claude
+   * MUST call the named tool — it can't respond with plain text instead.
+   *
+   * The `onChunk` callback fires with `inputJson` deltas (partial JSON fragments)
+   * as they stream in. The UI doesn't display these directly (it shows a spinner),
+   * but the callback keeps the progress reporting alive.
+   *
+   * @param tool - The tool definition with a JSON Schema input_schema (from getCompactAppJsonSchema())
+   * @returns The parsed tool input, typed as T (e.g. CompactApp)
+   */
+  async sendOneShotWithTool<T>(
+    systemPrompt: string,
+    message: string,
+    tool: { name: string; description: string; input_schema: Record<string, unknown> },
+    onChunk?: (chunk: string) => void,
+    options?: { model?: string; maxTokens?: number }
+  ): Promise<T> {
+    const stream = this.client.messages.stream({
+      model: options?.model || this.model,
+      max_tokens: options?.maxTokens || 16384,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: message }],
+      tools: [{
+        name: tool.name,
+        description: tool.description,
+        input_schema: tool.input_schema as Anthropic.Tool['input_schema']
+      }],
+      // Force Claude to call this specific tool — no text-only responses allowed
+      tool_choice: { type: 'tool', name: tool.name }
+    })
+
+    // inputJson fires with each JSON fragment as the tool input streams in
+    stream.on('inputJson', (delta: string, _snapshot: unknown) => {
+      if (onChunk) onChunk(delta)
+    })
+
+    const finalMessage = await stream.finalMessage()
+
+    const toolUse = finalMessage.content.find(
+      (block): block is Anthropic.ToolUseBlock => block.type === 'tool_use'
+    )
+
+    if (!toolUse) {
+      throw new Error('Claude did not return a tool_use block')
+    }
+
+    return toolUse.input as T
   }
 
   getConversationSummary(): string {
