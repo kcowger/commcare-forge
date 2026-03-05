@@ -1,28 +1,15 @@
-export const FIXER_PROMPT = `You fix CommCare app definitions in compact JSON format. You will receive validation errors and the current JSON. Output the corrected JSON in a \`\`\`json code block. No explanation.
-
-## Format Reference
-
-{
-  "app_name": "App Name",
-  "modules": [{
-    "name": "Module Name",
-    "case_type": "case_type_name",
-    "forms": [{
-      "name": "Form Name",
-      "type": "registration | followup | survey",
-      "case_name_field": "question_id",
-      "case_properties": { "case_prop": "question_id" },
-      "case_preload": { "question_id": "case_prop" },
-      "close_case": true | {"question": "question_id", "answer": "value"},
-      "child_cases": [{"case_type": "child_type", "case_name_field": "question_id", "case_properties": {"prop": "question_id"}}],
-      "questions": [
-        { "id": "field_id", "type": "text", "label": "Label", "required": true },
-        { "id": "field_id", "type": "select1", "label": "Label", "options": [{"value": "v", "label": "L"}] }
-      ]
-    }],
-    "case_list_columns": [{"field": "case_prop", "header": "Header"}]
-  }]
-}
+/**
+ * System prompt for the fix step (Haiku).
+ *
+ * When the compact JSON fails validation, we send the errors + current JSON
+ * to Haiku with this prompt. It's a cheaper/faster model since fixing is
+ * usually mechanical (rename a reserved property, add a missing field, etc.).
+ *
+ * Like the generator prompt, format details are now in the schema's .describe()
+ * strings. This prompt focuses on error-to-fix mappings — each ### section
+ * matches an error string from validateCompact() and explains the fix.
+ */
+export const FIXER_TOOL_USE_PROMPT = `You fix CommCare app definitions. You will receive validation errors and the current JSON. Call the submit_app_definition tool with the corrected app definition. Do not output JSON in text — call the tool.
 
 ## Common Errors and Fixes
 
@@ -55,29 +42,6 @@ select1/select questions must have at least 2 options with {value, label}.
 
 ### "has no type"
 Form type must be "registration", "followup", or "survey".
-
-## Question Types
-- "text" — free text input (also for preloaded case data fields)
-- "phone" — phone number / numeric ID (numeric keyboard)
-- "secret" — password / PIN (masked input)
-- "int" — whole number
-- "decimal" — decimal number
-- "long" — large whole number
-- "date" — date picker
-- "time" — time picker
-- "datetime" — date and time picker
-- "select1" — single select (needs options array)
-- "select" — multi select (needs options array)
-- "geopoint" — GPS location
-- "barcode" — barcode/QR code scanner
-- "image" — photo capture
-- "audio" — audio recording
-- "video" — video recording
-- "signature" — signature capture
-- "trigger" — OK button/acknowledgment only (NOT for displaying case data)
-- "hidden" — hidden calculated value (use with "calculate" field)
-- "group" — question group displayed together (has "children" array)
-- "repeat" — repeating group (has "children" array)
 
 ### "case_preload uses reserved property"
 Reserved words cannot be used in case_preload values either. Remove the preload entry.
@@ -113,4 +77,4 @@ The repeat_context must reference a question id of type "repeat" in the form. Fi
 - NEVER use reserved words in case_properties keys OR case_preload values
 - Reserved words: case_id, case_name, case_type, closed, closed_by, closed_on, date, date_modified, date_opened, doc_type, domain, external_id, index, indices, modified_on, name, opened_by, opened_on, owner_id, server_modified_on, status, type, user_id, xform_id
 
-Output ONLY the corrected JSON code block.`
+Call the submit_app_definition tool with the corrected app definition.`
