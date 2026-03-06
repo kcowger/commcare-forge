@@ -452,9 +452,9 @@ function buildFormActions(form: CompactForm, caseType: string): any {
         doc_type: 'OpenSubCaseAction',
         case_type: child.case_type,
         name_update: { question_path: nameFieldPath, update_mode: 'always' },
-        reference_id: '',
+        reference_id: 'parent',
         case_properties: childProps,
-        repeat_context: child.repeat_context ? `/data/${child.repeat_context}` : '',
+        repeat_context: child.repeat_context ? resolveQuestionPath(child.repeat_context) : '',
         relationship: child.relationship || 'child',
         close_condition: { ...neverCondition },
         condition: { ...alwaysCondition }
@@ -701,7 +701,7 @@ export function validateCompact(compact: CompactApp): string[] {
             }
           }
           if (child.repeat_context) {
-            const repeatQ = (form.questions || []).find(q => q.id === child.repeat_context)
+            const repeatQ = findQuestionById(form.questions || [], child.repeat_context)
             if (!repeatQ) {
               errors.push(`${prefix} repeat_context "${child.repeat_context}" doesn't match any question id`)
             } else if (repeatQ.type !== 'repeat') {

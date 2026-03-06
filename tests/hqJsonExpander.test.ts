@@ -892,6 +892,7 @@ describe('expandToHqJson — child_cases', () => {
     expect(subcases[0].case_properties.facility.question_path).toBe('/data/facility')
     expect(subcases[0].case_properties.urgency.question_path).toBe('/data/urgency')
     expect(subcases[0].relationship).toBe('child')
+    expect(subcases[0].reference_id).toBe('parent')
     expect(subcases[0].condition.type).toBe('always')
   })
 
