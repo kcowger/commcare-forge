@@ -229,6 +229,78 @@ describe('expandToHqJson', () => {
     expect(hq.modules[0].forms[0].requires).toBe('case')
   })
 
+  it('resolves question paths inside groups for case_properties', () => {
+    const app: CompactApp = {
+      app_name: 'Grouped App',
+      modules: [{
+        name: 'Water Points',
+        case_type: 'water_point',
+        forms: [{
+          name: 'Registration',
+          type: 'registration',
+          case_name_field: 'wp_name',
+          case_properties: { latitude: 'gps_lat', source_type: 'water_source' },
+          questions: [
+            { id: 'wp_name', type: 'text', label: 'Name' },
+            {
+              id: 'location_group',
+              type: 'group',
+              label: 'Location',
+              children: [
+                { id: 'gps_lat', type: 'decimal', label: 'Latitude' },
+                { id: 'gps_lon', type: 'decimal', label: 'Longitude' }
+              ]
+            },
+            {
+              id: 'details_group',
+              type: 'group',
+              label: 'Details',
+              children: [
+                { id: 'water_source', type: 'select1', label: 'Source Type', options: [{ value: 'well', label: 'Well' }] }
+              ]
+            }
+          ]
+        }]
+      }]
+    }
+    const hq = expandToHqJson(app)
+    const update = hq.modules[0].forms[0].actions.update_case.update
+    expect(update.latitude.question_path).toBe('/data/location_group/gps_lat')
+    expect(update.source_type.question_path).toBe('/data/details_group/water_source')
+    expect(hq.modules[0].forms[0].actions.open_case.name_update.question_path).toBe('/data/wp_name')
+  })
+
+  it('resolves question paths inside groups for case_preload', () => {
+    const app: CompactApp = {
+      app_name: 'Preload App',
+      modules: [{
+        name: 'Mod',
+        case_type: 'patient',
+        forms: [{
+          name: 'Followup',
+          type: 'followup',
+          case_properties: { notes: 'visit_notes' },
+          case_preload: { preloaded_name: 'patient_name' },
+          questions: [
+            {
+              id: 'info_group',
+              type: 'group',
+              label: 'Info',
+              children: [
+                { id: 'preloaded_name', type: 'text', label: 'Name' },
+                { id: 'visit_notes', type: 'text', label: 'Notes' }
+              ]
+            }
+          ]
+        }]
+      }]
+    }
+    const hq = expandToHqJson(app)
+    const actions = hq.modules[0].forms[0].actions
+    expect(actions.update_case.update.notes.question_path).toBe('/data/info_group/visit_notes')
+    expect(actions.case_preload.preload['/data/info_group/preloaded_name']).toBe('patient_name')
+  })
+
   it('filters reserved words from case_properties', () => {
     const app = minimalApp()
     app.modules[0].forms[0].case_properties = { date: 'age', visit_age: 'age' }

@@ -347,26 +347,37 @@ function buildFormActions(form: CompactForm, caseType: string): any {
     return base
   }
 
+  // Build a map of question id → full XForm path (accounting for group/repeat nesting)
+  function buildQuestionPathMap(questions: CompactQuestion[], parentPath: string = '/data'): Map<string, { path: string; type: string }> {
+    const pathMap = new Map<string, { path: string; type: string }>()
+    for (const q of questions) {
+      const fullPath = `${parentPath}/${q.id}`
+      pathMap.set(q.id, { path: fullPath, type: q.type })
+      if ((q.type === 'group' || q.type === 'repeat') && q.children) {
+        const childPaths = buildQuestionPathMap(q.children, fullPath)
+        childPaths.forEach((val, id) => pathMap.set(id, val))
+      }
+    }
+    return pathMap
+  }
+
+  const questionPathMap = buildQuestionPathMap(form.questions || [])
+
+  // Resolve a question ID to its full XForm path
+  function resolveQuestionPath(questionId: string): string {
+    const entry = questionPathMap.get(questionId)
+    return entry ? entry.path : `/data/${questionId}`
+  }
+
   // Build a safe update map, filtering out reserved property names and media questions
   function buildSafeUpdateMap(caseProperties: Record<string, string> | undefined): Record<string, any> {
     const updateMap: Record<string, any> = {}
     if (!caseProperties) return updateMap
-    // Build a lookup of question id → type for media filtering
-    function getQuestionType(questions: CompactQuestion[], id: string): string | undefined {
-      for (const q of questions) {
-        if (q.id === id) return q.type
-        if ((q.type === 'group' || q.type === 'repeat') && q.children) {
-          const t = getQuestionType(q.children, id)
-          if (t) return t
-        }
-      }
-      return undefined
-    }
     for (const [caseProp, questionId] of Object.entries(caseProperties)) {
       if (RESERVED_CASE_PROPERTIES.has(caseProp)) continue // skip reserved words
-      const qType = getQuestionType(form.questions || [], questionId)
-      if (qType && MEDIA_QUESTION_TYPES.has(qType)) continue // skip media/binary questions
-      updateMap[caseProp] = { question_path: `/data/${questionId}`, update_mode: 'always' }
+      const entry = questionPathMap.get(questionId)
+      if (entry && MEDIA_QUESTION_TYPES.has(entry.type)) continue // skip media/binary questions
+      updateMap[caseProp] = { question_path: resolveQuestionPath(questionId), update_mode: 'always' }
     }
     return updateMap
   }
@@ -374,7 +385,7 @@ function buildFormActions(form: CompactForm, caseType: string): any {
   if (form.type === 'registration') {
     // Open case
     base.open_case.condition = { ...alwaysCondition }
-    base.open_case.name_update.question_path = `/data/${form.case_name_field || form.questions[0]?.id || 'name'}`
+    base.open_case.name_update.question_path = resolveQuestionPath(form.case_name_field || form.questions[0]?.id || 'name')
 
     // Update case properties (filtered)
     const updateMap = buildSafeUpdateMap(form.case_properties)
@@ -397,7 +408,7 @@ function buildFormActions(form: CompactForm, caseType: string): any {
       const preloadMap: Record<string, string> = {}
       for (const [questionId, caseProp] of Object.entries(form.case_preload)) {
         if (RESERVED_CASE_PROPERTIES.has(caseProp)) continue // HQ rejects reserved words in preloads
-        preloadMap[`/data/${questionId}`] = caseProp
+        preloadMap[resolveQuestionPath(questionId)] = caseProp
       }
       if (Object.keys(preloadMap).length > 0) {
         base.case_preload.condition = { ...alwaysCondition }
@@ -415,7 +426,7 @@ function buildFormActions(form: CompactForm, caseType: string): any {
         doc_type: 'FormAction',
         condition: {
           type: 'if',
-          question: `/data/${form.close_case.question}`,
+          question: resolveQuestionPath(form.close_case.question),
           answer: form.close_case.answer,
           operator: '=',
           doc_type: 'FormActionCondition'
@@ -431,16 +442,11 @@ function buildFormActions(form: CompactForm, caseType: string): any {
       if (child.case_properties) {
         for (const [caseProp, questionId] of Object.entries(child.case_properties)) {
           if (RESERVED_CASE_PROPERTIES.has(caseProp)) continue
-          const basePath = child.repeat_context
-            ? `/data/${child.repeat_context}/${questionId}`
-            : `/data/${questionId}`
-          childProps[caseProp] = { question_path: basePath, update_mode: 'always' }
+          childProps[caseProp] = { question_path: resolveQuestionPath(questionId), update_mode: 'always' }
         }
       }
 
-      const nameFieldPath = child.repeat_context
-        ? `/data/${child.repeat_context}/${child.case_name_field}`
-        : `/data/${child.case_name_field}`
+      const nameFieldPath = resolveQuestionPath(child.case_name_field)
 
       return {
         doc_type: 'OpenSubCaseAction',
