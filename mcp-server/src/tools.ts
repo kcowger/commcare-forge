@@ -2,24 +2,24 @@
  * MCP tool handlers for validating and building CommCare apps.
  *
  * These are the actual implementations behind the MCP tools registered in index.ts.
- * They share the same pipeline as the Electron app — validate compact JSON, expand
+ * They share the same pipeline as the Electron app — validate blueprint, expand
  * to HQ format, auto-fix, validate the expanded XML, compile to .ccz.
  *
  * `getToolDefinitions()` returns plain JSON Schema tool definitions for non-MCP
  * consumers (e.g. raw Anthropic API tool definitions). The MCP server itself uses
  * the Zod schema directly via `server.tool()`.
  */
-import { validateCompact, expandToHqJson } from '../../backend/src/services/hqJsonExpander'
+import { validateBlueprint, expandBlueprint } from '../../backend/src/services/hqJsonExpander'
 import { AutoFixer } from '../../backend/src/services/autoFixer'
 import { HqValidator } from '../../backend/src/services/hqValidator'
 import { CczCompiler } from '../../backend/src/services/cczCompiler'
-import { getCompactAppJsonSchema } from '../../backend/src/schemas/compactApp'
+import { getAppBlueprintJsonSchema } from '../../backend/src/schemas/blueprint'
 import { mkdirSync, writeFileSync, copyFileSync } from 'fs'
 import { resolve } from 'path'
-import type { CompactApp } from '../../backend/src/schemas/compactApp'
+import type { AppBlueprint } from '../../backend/src/schemas/blueprint'
 
 interface ValidateInput {
-  compact_json: CompactApp
+  blueprint: AppBlueprint
 }
 
 interface ValidateResult {
@@ -28,7 +28,7 @@ interface ValidateResult {
 }
 
 interface BuildInput {
-  compact_json: CompactApp
+  blueprint: AppBlueprint
   output_dir?: string
 }
 
@@ -40,7 +40,7 @@ interface BuildResult {
 }
 
 export async function handleValidate(input: ValidateInput): Promise<ValidateResult> {
-  const errors = validateCompact(input.compact_json)
+  const errors = validateBlueprint(input.blueprint)
   if (errors.length === 0) {
     return { valid: true }
   }
@@ -54,13 +54,13 @@ export async function handleValidate(input: ValidateInput): Promise<ValidateResu
 export async function handleBuild(input: BuildInput): Promise<BuildResult> {
   try {
     // 1. Validate first
-    const validationErrors = validateCompact(input.compact_json)
+    const validationErrors = validateBlueprint(input.blueprint)
     if (validationErrors.length > 0) {
       return { success: false, errors: validationErrors }
     }
 
     // 2. Expand to HQ JSON
-    const hqJson = expandToHqJson(input.compact_json)
+    const hqJson = expandBlueprint(input.blueprint)
 
     // 3. Auto-fix the expanded files
     const autoFixer = new AutoFixer()
@@ -82,7 +82,7 @@ export async function handleBuild(input: BuildInput): Promise<BuildResult> {
 
     // 5. Compile to CCZ
     const compiler = new CczCompiler()
-    const appName = input.compact_json.app_name
+    const appName = input.blueprint.app_name
     const cczTempPath = await compiler.compile(hqJson, appName)
 
     // 6. Write output files
@@ -116,33 +116,33 @@ export async function handleBuild(input: BuildInput): Promise<BuildResult> {
  * The MCP server itself uses the Zod schema via server.tool() in index.ts.
  */
 export function getToolDefinitions() {
-  const compactJsonSchema = getCompactAppJsonSchema()
+  const blueprintJsonSchema = getAppBlueprintJsonSchema()
 
   return [
     {
       name: 'validate_commcare_app',
-      description: 'Validates a CommCare compact JSON app definition against CommCare rules. Call this before build_commcare_app to catch errors early. Returns { valid: true } or { valid: false, errors: [...] }.',
+      description: 'Validates a CommCare app blueprint JSON definition against CommCare rules. Call this before build_commcare_app to catch errors early. Returns { valid: true } or { valid: false, errors: [...] }.',
       inputSchema: {
         type: 'object' as const,
         properties: {
-          compact_json: compactJsonSchema
+          blueprint: blueprintJsonSchema
         },
-        required: ['compact_json']
+        required: ['blueprint']
       }
     },
     {
       name: 'build_commcare_app',
-      description: 'Builds a CommCare app from compact JSON. Expands to full HQ format, auto-fixes common issues, validates, compiles to .ccz, and writes files to output_dir. Call validate_commcare_app first.',
+      description: 'Builds a CommCare app from an app blueprint. Expands to full HQ format, auto-fixes common issues, validates, compiles to .ccz, and writes files to output_dir. Call validate_commcare_app first.',
       inputSchema: {
         type: 'object' as const,
         properties: {
-          compact_json: compactJsonSchema,
+          blueprint: blueprintJsonSchema,
           output_dir: {
             type: 'string',
             description: 'Output directory path. Defaults to ./commcare-output/'
           }
         },
-        required: ['compact_json']
+        required: ['blueprint']
       }
     }
   ]

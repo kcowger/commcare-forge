@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest'
-import { validateCompact, expandToHqJson } from '../backend/src/services/hqJsonExpander'
-import type { CompactApp } from '../backend/src/schemas/compactApp'
+import { validateBlueprint, expandBlueprint } from '../backend/src/services/hqJsonExpander'
+import type { AppBlueprint } from '../backend/src/schemas/blueprint'
 
-function minimalApp(overrides?: Partial<CompactApp>): CompactApp {
+function minimalApp(overrides?: Partial<AppBlueprint>): AppBlueprint {
   return {
     app_name: 'Test App',
     modules: [{
@@ -22,7 +22,7 @@ function minimalApp(overrides?: Partial<CompactApp>): CompactApp {
   }
 }
 
-function surveyApp(): CompactApp {
+function surveyApp(): AppBlueprint {
   return {
     app_name: 'Survey App',
     modules: [{
@@ -38,33 +38,33 @@ function surveyApp(): CompactApp {
   }
 }
 
-// --- validateCompact ---
+// --- validateBlueprint ---
 
-describe('validateCompact', () => {
+describe('validateBlueprint', () => {
   it('returns no errors for a valid minimal app', () => {
-    const errors = validateCompact(minimalApp())
+    const errors = validateBlueprint(minimalApp())
     expect(errors).toEqual([])
   })
 
   it('returns no errors for a valid survey app without case_type', () => {
-    const errors = validateCompact(surveyApp())
+    const errors = validateBlueprint(surveyApp())
     expect(errors).toEqual([])
   })
 
   // Missing app_name, empty modules, missing question id/type are now caught
-  // by the Zod schema before validateCompact runs — see tests/schemas/compactApp.test.ts.
+  // by the Zod schema before validateBlueprint runs — see tests/schemas/blueprint.test.ts.
 
   it('errors when case forms exist but no case_type', () => {
     const app = minimalApp()
     app.modules[0].case_type = undefined
-    const errors = validateCompact(app)
+    const errors = validateBlueprint(app)
     expect(errors).toContainEqual(expect.stringContaining('case_type'))
   })
 
   it('errors on form with no questions', () => {
     const app = minimalApp()
     app.modules[0].forms[0].questions = []
-    const errors = validateCompact(app)
+    const errors = validateBlueprint(app)
     expect(errors).toContainEqual(expect.stringContaining('no questions'))
   })
 
@@ -73,40 +73,40 @@ describe('validateCompact', () => {
     app.modules[0].forms[0].questions.push({
       id: 'choice', type: 'select1', label: 'Pick one', options: []
     })
-    const errors = validateCompact(app)
+    const errors = validateBlueprint(app)
     expect(errors).toContainEqual(expect.stringContaining('no options'))
   })
 
   it('errors on registration form without case_name_field', () => {
     const app = minimalApp()
     app.modules[0].forms[0].case_name_field = undefined
-    const errors = validateCompact(app)
+    const errors = validateBlueprint(app)
     expect(errors).toContainEqual(expect.stringContaining('case_name_field'))
   })
 
   it('errors on case_name_field that does not match any question', () => {
     const app = minimalApp()
     app.modules[0].forms[0].case_name_field = 'nonexistent'
-    const errors = validateCompact(app)
+    const errors = validateBlueprint(app)
     expect(errors).toContainEqual(expect.stringContaining("doesn't match"))
   })
 
   it('errors on reserved word in case_properties', () => {
     const app = minimalApp()
     app.modules[0].forms[0].case_properties = { date: 'age' }
-    const errors = validateCompact(app)
+    const errors = validateBlueprint(app)
     expect(errors).toContainEqual(expect.stringContaining('reserved'))
   })
 
   it('errors on case_properties mapping to nonexistent question', () => {
     const app = minimalApp()
     app.modules[0].forms[0].case_properties = { visit_age: 'nonexistent_q' }
-    const errors = validateCompact(app)
+    const errors = validateBlueprint(app)
     expect(errors).toContainEqual(expect.stringContaining("doesn't exist"))
   })
 
   it('errors on reserved word in case_preload', () => {
-    const app: CompactApp = {
+    const app: AppBlueprint = {
       app_name: 'Test',
       modules: [{
         name: 'Mod',
@@ -119,24 +119,24 @@ describe('validateCompact', () => {
         }]
       }]
     }
-    const errors = validateCompact(app)
+    const errors = validateBlueprint(app)
     expect(errors).toContainEqual(expect.stringContaining('reserved'))
   })
 
   it('errors on reserved word in case_list_columns', () => {
     const app = minimalApp()
     app.modules[0].case_list_columns = [{ field: 'status', header: 'Status' }]
-    const errors = validateCompact(app)
+    const errors = validateBlueprint(app)
     expect(errors).toContainEqual(expect.stringContaining('reserved'))
   })
 
 })
 
-// --- expandToHqJson ---
+// --- expandBlueprint ---
 
-describe('expandToHqJson', () => {
+describe('expandBlueprint', () => {
   it('produces correct top-level structure', () => {
-    const hq = expandToHqJson(minimalApp())
+    const hq = expandBlueprint(minimalApp())
     expect(hq.doc_type).toBe('Application')
     expect(hq.name).toBe('Test App')
     expect(hq.langs).toEqual(['en'])
@@ -145,7 +145,7 @@ describe('expandToHqJson', () => {
   })
 
   it('generates correct number of modules and forms', () => {
-    const app: CompactApp = {
+    const app: AppBlueprint = {
       app_name: 'Multi',
       modules: [
         { name: 'Mod A', case_type: 'a', forms: [
@@ -157,14 +157,14 @@ describe('expandToHqJson', () => {
         ]}
       ]
     }
-    const hq = expandToHqJson(app)
+    const hq = expandBlueprint(app)
     expect(hq.modules).toHaveLength(2)
     expect(hq.modules[0].forms).toHaveLength(2)
     expect(hq.modules[1].forms).toHaveLength(1)
   })
 
   it('generates XForm XML with correct xmlns and itext', () => {
-    const hq = expandToHqJson(minimalApp())
+    const hq = expandBlueprint(minimalApp())
     const form = hq.modules[0].forms[0]
     const xform = hq._attachments[`${form.unique_id}.xml`]
     expect(xform).toContain('xmlns=')
@@ -175,7 +175,7 @@ describe('expandToHqJson', () => {
   })
 
   it('maps question types to correct body elements', () => {
-    const app: CompactApp = {
+    const app: AppBlueprint = {
       app_name: 'Types',
       modules: [{
         name: 'Mod',
@@ -192,7 +192,7 @@ describe('expandToHqJson', () => {
         }]
       }]
     }
-    const hq = expandToHqJson(app)
+    const hq = expandBlueprint(app)
     const xform = hq._attachments[`${hq.modules[0].forms[0].unique_id}.xml`]
     expect(xform).toContain('<input ref="/data/text_q">')
     expect(xform).toContain('<select1 ref="/data/sel_q">')
@@ -202,14 +202,14 @@ describe('expandToHqJson', () => {
   })
 
   it('sets correct form actions for registration forms', () => {
-    const hq = expandToHqJson(minimalApp())
+    const hq = expandBlueprint(minimalApp())
     const actions = hq.modules[0].forms[0].actions
     expect(actions.open_case.condition.type).toBe('always')
     expect(actions.open_case.name_update.question_path).toBe('/data/patient_name')
   })
 
   it('sets correct form actions for followup forms', () => {
-    const app: CompactApp = {
+    const app: AppBlueprint = {
       app_name: 'FU',
       modules: [{
         name: 'Mod',
@@ -222,17 +222,44 @@ describe('expandToHqJson', () => {
         }]
       }]
     }
-    const hq = expandToHqJson(app)
+    const hq = expandBlueprint(app)
     const actions = hq.modules[0].forms[0].actions
     expect(actions.update_case.condition.type).toBe('always')
     expect(actions.update_case.update.visit_notes.question_path).toBe('/data/notes')
     expect(hq.modules[0].forms[0].requires).toBe('case')
   })
 
+  it('resolves question paths through groups for case_properties', () => {
+    const app: AppBlueprint = {
+      app_name: 'Group Test',
+      modules: [{
+        name: 'Mod',
+        case_type: 'patient',
+        forms: [{
+          name: 'Register',
+          type: 'registration',
+          case_name_field: 'full_name',
+          case_properties: { patient_age: 'age' },
+          questions: [{
+            id: 'personal_info', type: 'group', label: 'Personal Info',
+            children: [
+              { id: 'full_name', type: 'text', label: 'Full Name' },
+              { id: 'age', type: 'int', label: 'Age' }
+            ]
+          }]
+        }]
+      }]
+    }
+    const hq = expandBlueprint(app)
+    const actions = hq.modules[0].forms[0].actions
+    expect(actions.open_case.name_update.question_path).toBe('/data/personal_info/full_name')
+    expect(actions.update_case.update.patient_age.question_path).toBe('/data/personal_info/age')
+  })
+
   it('filters reserved words from case_properties', () => {
     const app = minimalApp()
     app.modules[0].forms[0].case_properties = { date: 'age', visit_age: 'age' }
-    const hq = expandToHqJson(app)
+    const hq = expandBlueprint(app)
     const update = hq.modules[0].forms[0].actions.update_case.update
     expect(update.date).toBeUndefined()
     expect(update.visit_age).toBeDefined()
@@ -241,7 +268,7 @@ describe('expandToHqJson', () => {
   it('always includes case_name as first column in case details', () => {
     const app = minimalApp()
     app.modules[0].case_list_columns = [{ field: 'visit_age', header: 'Age' }]
-    const hq = expandToHqJson(app)
+    const hq = expandBlueprint(app)
     const cols = hq.modules[0].case_details.short.columns
     expect(cols[0].field).toBe('case_name')
     expect(cols[0].header.en).toBe('Name')
@@ -249,7 +276,7 @@ describe('expandToHqJson', () => {
   })
 
   it('generates itext entries for hints', () => {
-    const app: CompactApp = {
+    const app: AppBlueprint = {
       app_name: 'Hints',
       modules: [{
         name: 'Mod',
@@ -262,14 +289,14 @@ describe('expandToHqJson', () => {
         }]
       }]
     }
-    const hq = expandToHqJson(app)
+    const hq = expandBlueprint(app)
     const xform = hq._attachments[`${hq.modules[0].forms[0].unique_id}.xml`]
     expect(xform).toContain("jr:itext('q1-hint')")
     expect(xform).toContain('Enter full name')
   })
 
   it('generates itext entries for select options', () => {
-    const app: CompactApp = {
+    const app: AppBlueprint = {
       app_name: 'Opts',
       modules: [{
         name: 'Mod',
@@ -283,7 +310,7 @@ describe('expandToHqJson', () => {
         }]
       }]
     }
-    const hq = expandToHqJson(app)
+    const hq = expandBlueprint(app)
     const xform = hq._attachments[`${hq.modules[0].forms[0].unique_id}.xml`]
     expect(xform).toContain("jr:itext('color-red-label')")
     expect(xform).toContain("jr:itext('color-blue-label')")
@@ -292,7 +319,7 @@ describe('expandToHqJson', () => {
   })
 
   it('generates phone input with numeric appearance', () => {
-    const app: CompactApp = {
+    const app: AppBlueprint = {
       app_name: 'Phone Test',
       modules: [{
         name: 'Contacts',
@@ -305,7 +332,7 @@ describe('expandToHqJson', () => {
         }]
       }]
     }
-    const hq = expandToHqJson(app)
+    const hq = expandBlueprint(app)
     const xform = hq._attachments[`${hq.modules[0].forms[0].unique_id}.xml`]
     expect(xform).toContain('appearance="numeric"')
     expect(xform).toContain('<input ref="/data/phone" appearance="numeric">')
@@ -313,7 +340,7 @@ describe('expandToHqJson', () => {
   })
 
   it('generates time and datetime with correct xsd types', () => {
-    const app: CompactApp = {
+    const app: AppBlueprint = {
       app_name: 'Time Test',
       modules: [{
         name: 'Scheduling',
@@ -327,14 +354,14 @@ describe('expandToHqJson', () => {
         }]
       }]
     }
-    const hq = expandToHqJson(app)
+    const hq = expandBlueprint(app)
     const xform = hq._attachments[`${hq.modules[0].forms[0].unique_id}.xml`]
     expect(xform).toContain('nodeset="/data/start_time" type="xsd:time"')
     expect(xform).toContain('nodeset="/data/appointment" type="xsd:dateTime"')
   })
 
   it('generates audio/video upload elements with correct mediatypes', () => {
-    const app: CompactApp = {
+    const app: AppBlueprint = {
       app_name: 'Media Test',
       modules: [{
         name: 'Media',
@@ -348,14 +375,14 @@ describe('expandToHqJson', () => {
         }]
       }]
     }
-    const hq = expandToHqJson(app)
+    const hq = expandBlueprint(app)
     const xform = hq._attachments[`${hq.modules[0].forms[0].unique_id}.xml`]
     expect(xform).toContain('mediatype="audio/*"')
     expect(xform).toContain('mediatype="video/*"')
   })
 
   it('generates signature upload with signature appearance', () => {
-    const app: CompactApp = {
+    const app: AppBlueprint = {
       app_name: 'Sig Test',
       modules: [{
         name: 'Consent',
@@ -368,14 +395,14 @@ describe('expandToHqJson', () => {
         }]
       }]
     }
-    const hq = expandToHqJson(app)
+    const hq = expandBlueprint(app)
     const xform = hq._attachments[`${hq.modules[0].forms[0].unique_id}.xml`]
     expect(xform).toContain('appearance="signature"')
     expect(xform).toContain('mediatype="image/*"')
   })
 
   it('generates hidden field with no body element and calculate attribute', () => {
-    const app: CompactApp = {
+    const app: AppBlueprint = {
       app_name: 'Calc Test',
       modules: [{
         name: 'BMI',
@@ -390,7 +417,7 @@ describe('expandToHqJson', () => {
         }]
       }]
     }
-    const hq = expandToHqJson(app)
+    const hq = expandBlueprint(app)
     const xform = hq._attachments[`${hq.modules[0].forms[0].unique_id}.xml`]
     // Should have data element and bind
     expect(xform).toContain('<bmi/>')
@@ -401,7 +428,7 @@ describe('expandToHqJson', () => {
   })
 
   it('generates secret input element for passwords/PINs', () => {
-    const app: CompactApp = {
+    const app: AppBlueprint = {
       app_name: 'Auth Test',
       modules: [{
         name: 'Auth',
@@ -414,14 +441,14 @@ describe('expandToHqJson', () => {
         }]
       }]
     }
-    const hq = expandToHqJson(app)
+    const hq = expandBlueprint(app)
     const xform = hq._attachments[`${hq.modules[0].forms[0].unique_id}.xml`]
     expect(xform).toContain('<secret ref="/data/pin">')
     expect(xform).toContain('type="xsd:string"')
   })
 
   it('generates group with nested children as field-list', () => {
-    const app: CompactApp = {
+    const app: AppBlueprint = {
       app_name: 'Group Test',
       modules: [{
         name: 'Intake',
@@ -440,7 +467,7 @@ describe('expandToHqJson', () => {
         }]
       }]
     }
-    const hq = expandToHqJson(app)
+    const hq = expandBlueprint(app)
     const xform = hq._attachments[`${hq.modules[0].forms[0].unique_id}.xml`]
     // Group body element must have ref pointing to data node
     expect(xform).toContain('<group ref="/data/personal_info" appearance="field-list">')
@@ -451,7 +478,7 @@ describe('expandToHqJson', () => {
   })
 
   it('generates repeat with nested children', () => {
-    const app: CompactApp = {
+    const app: AppBlueprint = {
       app_name: 'Repeat Test',
       modules: [{
         name: 'Family',
@@ -470,7 +497,7 @@ describe('expandToHqJson', () => {
         }]
       }]
     }
-    const hq = expandToHqJson(app)
+    const hq = expandBlueprint(app)
     const xform = hq._attachments[`${hq.modules[0].forms[0].unique_id}.xml`]
     // Repeat outer group must have ref pointing to data node
     expect(xform).toContain('<group ref="/data/children">')
@@ -481,7 +508,7 @@ describe('expandToHqJson', () => {
   })
 
   it('validates questions inside groups/repeats', () => {
-    const app: CompactApp = {
+    const app: AppBlueprint = {
       app_name: 'Nested Validation',
       modules: [{
         name: 'Mod',
@@ -504,14 +531,14 @@ describe('expandToHqJson', () => {
       }]
     }
     // Should validate without errors — child IDs inside groups should be found
-    const errors = validateCompact(app)
+    const errors = validateBlueprint(app)
     expect(errors).toHaveLength(0)
   })
 
   // --- close_case validation ---
 
-  it('allows close_case: true on followup form', () => {
-    const app: CompactApp = {
+  it('allows close_case: {} on followup form', () => {
+    const app: AppBlueprint = {
       app_name: 'Test',
       modules: [{
         name: 'Mod',
@@ -519,17 +546,17 @@ describe('expandToHqJson', () => {
         forms: [{
           name: 'Close',
           type: 'followup',
-          close_case: true,
+          close_case: {},
           questions: [{ id: 'reason', type: 'text', label: 'Reason' }]
         }]
       }]
     }
-    const errors = validateCompact(app)
+    const errors = validateBlueprint(app)
     expect(errors).toHaveLength(0)
   })
 
   it('errors on close_case on registration form', () => {
-    const app: CompactApp = {
+    const app: AppBlueprint = {
       app_name: 'Test',
       modules: [{
         name: 'Mod',
@@ -538,34 +565,34 @@ describe('expandToHqJson', () => {
           name: 'Register',
           type: 'registration',
           case_name_field: 'name',
-          close_case: true,
+          close_case: {},
           questions: [{ id: 'name', type: 'text', label: 'Name' }]
         }]
       }]
     }
-    const errors = validateCompact(app)
+    const errors = validateBlueprint(app)
     expect(errors).toContainEqual(expect.stringContaining('not a followup'))
   })
 
   it('errors on close_case on survey form', () => {
-    const app: CompactApp = {
+    const app: AppBlueprint = {
       app_name: 'Test',
       modules: [{
         name: 'Mod',
         forms: [{
           name: 'Survey',
           type: 'survey',
-          close_case: true,
+          close_case: {},
           questions: [{ id: 'q', type: 'text', label: 'Q' }]
         }]
       }]
     }
-    const errors = validateCompact(app)
+    const errors = validateBlueprint(app)
     expect(errors).toContainEqual(expect.stringContaining('not a followup'))
   })
 
   it('validates conditional close_case with valid question', () => {
-    const app: CompactApp = {
+    const app: AppBlueprint = {
       app_name: 'Test',
       modules: [{
         name: 'Mod',
@@ -581,12 +608,12 @@ describe('expandToHqJson', () => {
         }]
       }]
     }
-    const errors = validateCompact(app)
+    const errors = validateBlueprint(app)
     expect(errors).toHaveLength(0)
   })
 
   it('errors on conditional close_case referencing nonexistent question', () => {
-    const app: CompactApp = {
+    const app: AppBlueprint = {
       app_name: 'Test',
       modules: [{
         name: 'Mod',
@@ -599,12 +626,12 @@ describe('expandToHqJson', () => {
         }]
       }]
     }
-    const errors = validateCompact(app)
+    const errors = validateBlueprint(app)
     expect(errors).toContainEqual(expect.stringContaining("doesn't exist"))
   })
 
   it('errors on conditional close_case missing answer', () => {
-    const app: CompactApp = {
+    const app: AppBlueprint = {
       app_name: 'Test',
       modules: [{
         name: 'Mod',
@@ -617,14 +644,14 @@ describe('expandToHqJson', () => {
         }]
       }]
     }
-    const errors = validateCompact(app)
+    const errors = validateBlueprint(app)
     expect(errors).toContainEqual(expect.stringContaining('missing "answer"'))
   })
 
   // --- child_cases validation ---
 
   it('validates child_cases with valid fields', () => {
-    const app: CompactApp = {
+    const app: AppBlueprint = {
       app_name: 'Test',
       modules: [{
         name: 'Mod',
@@ -644,12 +671,12 @@ describe('expandToHqJson', () => {
         }]
       }]
     }
-    const errors = validateCompact(app)
+    const errors = validateBlueprint(app)
     expect(errors).toHaveLength(0)
   })
 
   it('errors on child_cases missing case_type', () => {
-    const app: CompactApp = {
+    const app: AppBlueprint = {
       app_name: 'Test',
       modules: [{
         name: 'Mod',
@@ -662,12 +689,12 @@ describe('expandToHqJson', () => {
         }]
       }]
     }
-    const errors = validateCompact(app)
+    const errors = validateBlueprint(app)
     expect(errors).toContainEqual(expect.stringContaining('missing case_type'))
   })
 
   it('errors on child_cases with nonexistent case_name_field', () => {
-    const app: CompactApp = {
+    const app: AppBlueprint = {
       app_name: 'Test',
       modules: [{
         name: 'Mod',
@@ -680,12 +707,12 @@ describe('expandToHqJson', () => {
         }]
       }]
     }
-    const errors = validateCompact(app)
+    const errors = validateBlueprint(app)
     expect(errors).toContainEqual(expect.stringContaining("doesn't match"))
   })
 
   it('errors on child_cases with reserved property name', () => {
-    const app: CompactApp = {
+    const app: AppBlueprint = {
       app_name: 'Test',
       modules: [{
         name: 'Mod',
@@ -698,12 +725,12 @@ describe('expandToHqJson', () => {
         }]
       }]
     }
-    const errors = validateCompact(app)
+    const errors = validateBlueprint(app)
     expect(errors).toContainEqual(expect.stringContaining('reserved'))
   })
 
   it('errors on child_cases repeat_context pointing to non-repeat question', () => {
-    const app: CompactApp = {
+    const app: AppBlueprint = {
       app_name: 'Test',
       modules: [{
         name: 'Mod',
@@ -716,16 +743,16 @@ describe('expandToHqJson', () => {
         }]
       }]
     }
-    const errors = validateCompact(app)
+    const errors = validateBlueprint(app)
     expect(errors).toContainEqual(expect.stringContaining('not a repeat group'))
   })
 })
 
 // --- close_case expansion ---
 
-describe('expandToHqJson — close_case', () => {
-  it('close_case: true sets condition to always', () => {
-    const app: CompactApp = {
+describe('expandBlueprint — close_case', () => {
+  it('close_case: {} sets condition to always', () => {
+    const app: AppBlueprint = {
       app_name: 'Close Test',
       modules: [{
         name: 'Patients',
@@ -733,18 +760,18 @@ describe('expandToHqJson — close_case', () => {
         forms: [{
           name: 'Close Case',
           type: 'followup',
-          close_case: true,
+          close_case: {},
           questions: [{ id: 'reason', type: 'text', label: 'Reason' }]
         }]
       }]
     }
-    const hq = expandToHqJson(app)
+    const hq = expandBlueprint(app)
     const actions = hq.modules[0].forms[0].actions
     expect(actions.close_case.condition.type).toBe('always')
   })
 
   it('conditional close_case sets condition type to if', () => {
-    const app: CompactApp = {
+    const app: AppBlueprint = {
       app_name: 'Conditional Close',
       modules: [{
         name: 'Patients',
@@ -760,7 +787,7 @@ describe('expandToHqJson — close_case', () => {
         }]
       }]
     }
-    const hq = expandToHqJson(app)
+    const hq = expandBlueprint(app)
     const condition = hq.modules[0].forms[0].actions.close_case.condition
     expect(condition.type).toBe('if')
     expect(condition.question).toBe('/data/outcome')
@@ -769,7 +796,7 @@ describe('expandToHqJson — close_case', () => {
   })
 
   it('omitted close_case keeps condition as never (backward compat)', () => {
-    const app: CompactApp = {
+    const app: AppBlueprint = {
       app_name: 'No Close',
       modules: [{
         name: 'Mod',
@@ -781,16 +808,16 @@ describe('expandToHqJson — close_case', () => {
         }]
       }]
     }
-    const hq = expandToHqJson(app)
+    const hq = expandBlueprint(app)
     expect(hq.modules[0].forms[0].actions.close_case.condition.type).toBe('never')
   })
 })
 
 // --- child_cases expansion ---
 
-describe('expandToHqJson — child_cases', () => {
+describe('expandBlueprint — child_cases', () => {
   it('generates subcases array with OpenSubCaseAction structure', () => {
-    const app: CompactApp = {
+    const app: AppBlueprint = {
       app_name: 'Child Case Test',
       modules: [{
         name: 'Patients',
@@ -811,7 +838,7 @@ describe('expandToHqJson — child_cases', () => {
         }]
       }]
     }
-    const hq = expandToHqJson(app)
+    const hq = expandBlueprint(app)
     const subcases = hq.modules[0].forms[0].actions.subcases
     expect(subcases).toHaveLength(1)
     expect(subcases[0].doc_type).toBe('OpenSubCaseAction')
@@ -824,7 +851,7 @@ describe('expandToHqJson — child_cases', () => {
   })
 
   it('filters reserved property names from child case properties', () => {
-    const app: CompactApp = {
+    const app: AppBlueprint = {
       app_name: 'Reserved Test',
       modules: [{
         name: 'Mod',
@@ -841,14 +868,14 @@ describe('expandToHqJson — child_cases', () => {
         }]
       }]
     }
-    const hq = expandToHqJson(app)
+    const hq = expandBlueprint(app)
     const props = hq.modules[0].forms[0].actions.subcases[0].case_properties
     expect(props.status).toBeUndefined()
     expect(props.ref_note).toBeDefined()
   })
 
   it('child_cases with repeat_context prefixes paths correctly', () => {
-    const app: CompactApp = {
+    const app: AppBlueprint = {
       app_name: 'Repeat Child Test',
       modules: [{
         name: 'Households',
@@ -872,7 +899,7 @@ describe('expandToHqJson — child_cases', () => {
         }]
       }]
     }
-    const hq = expandToHqJson(app)
+    const hq = expandBlueprint(app)
     const subcase = hq.modules[0].forms[0].actions.subcases[0]
     expect(subcase.name_update.question_path).toBe('/data/members/member_name')
     expect(subcase.case_properties.member_age.question_path).toBe('/data/members/member_age')
@@ -880,7 +907,7 @@ describe('expandToHqJson — child_cases', () => {
   })
 
   it('child_cases with relationship: extension sets relationship field', () => {
-    const app: CompactApp = {
+    const app: AppBlueprint = {
       app_name: 'Extension Test',
       modules: [{
         name: 'Mod',
@@ -897,12 +924,12 @@ describe('expandToHqJson — child_cases', () => {
         }]
       }]
     }
-    const hq = expandToHqJson(app)
+    const hq = expandBlueprint(app)
     expect(hq.modules[0].forms[0].actions.subcases[0].relationship).toBe('extension')
   })
 
   it('no child_cases produces empty subcases (backward compat)', () => {
-    const app: CompactApp = {
+    const app: AppBlueprint = {
       app_name: 'No Children',
       modules: [{
         name: 'Mod',
@@ -914,7 +941,7 @@ describe('expandToHqJson — child_cases', () => {
         }]
       }]
     }
-    const hq = expandToHqJson(app)
+    const hq = expandBlueprint(app)
     expect(hq.modules[0].forms[0].actions.subcases).toEqual([])
   })
 })

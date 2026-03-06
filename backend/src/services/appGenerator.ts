@@ -1,26 +1,41 @@
 /**
- * Orchestrates the full app generation pipeline:
+ * Orchestrates the three-tiered app generation pipeline:
  *
- *   1. Ask Claude to generate a compact JSON app definition (structured output)
- *   2. Validate the compact JSON against CommCare rules
- *   3. If validation fails, ask Claude (Haiku) to fix errors — loop until clean or stuck
- *   4. Expand compact JSON into full HQ import JSON (with XForm XML, suite.xml, etc.)
- *   5. Export the HQ JSON and compile it into a .ccz file
+ *   Tier 1: Scaffold — plan app structure + data model (Sonnet, structured output)
+ *   Tier 2: Module content — case list columns per module (Sonnet, structured output)
+ *   Tier 3: Form content — questions + case config per form (Sonnet, structured output)
+ *   Assembly — combine tiers into a full AppBlueprint
+ *   Validate — check semantic rules; if errors, re-generate failing forms (Haiku)
+ *   Expand — convert to HQ JSON, export, compile .ccz
  *
- * Both generation (step 1) and fixing (step 3) use `sendOneShotStructured` with
- * the Zod schema via Anthropic's output_config API. This constrains Claude's
- * response to valid JSON matching the schema — no parsing or repair needed.
+ * Each tier uses its own slim structured output schema, keeping well within
+ * Anthropic's schema compilation limits. Data flows top-down: the scaffold's
+ * case_types define the "contract" that modules and forms build against.
  */
 import type { AppDefinition, GenerationProgress } from '../types'
 import { ClaudeService } from './claude'
 import { CczCompiler } from './cczCompiler'
 import { AppExporter } from './appExporter'
 import { BuildLogger } from './buildLogger'
-import { GENERATOR_TOOL_USE_PROMPT } from '../prompts/generatorToolUse'
-import { FIXER_TOOL_USE_PROMPT } from '../prompts/fixerToolUse'
-import { compactAppSchema } from '../schemas/compactApp'
-import { expandToHqJson, validateCompact } from './hqJsonExpander'
-import type { CompactApp } from '../schemas/compactApp'
+import { SCAFFOLD_PROMPT } from '../prompts/scaffoldPrompt'
+import { MODULE_PROMPT } from '../prompts/modulePrompt'
+import { FORM_PROMPT } from '../prompts/formPrompt'
+import { FORM_FIXER_PROMPT } from '../prompts/formFixerPrompt'
+import {
+  scaffoldSchema, moduleContentSchema, formContentSchema,
+  assembleBlueprint, unflattenQuestions, flattenQuestions, closeCaseToFlat,
+  type Scaffold, type ModuleContent, type FormContent, type AppBlueprint, type BlueprintForm,
+} from '../schemas/blueprint'
+import { expandBlueprint, validateBlueprint } from './hqJsonExpander'
+
+type ReportFn = (
+  status: GenerationProgress['status'],
+  message: string,
+  attempt: number,
+  totalSteps?: number,
+  completedSteps?: number,
+  currentStep?: string,
+) => void
 
 export class AppGenerator {
   private claudeService: ClaudeService
@@ -38,9 +53,9 @@ export class AppGenerator {
     onProgress?: (progress: GenerationProgress) => void,
     appName?: string
   ): Promise<{ success: boolean; appDefinition?: AppDefinition; cczPath?: string; exportPath?: string; hqJsonPath?: string; errors?: string[] }> {
-    const report = (status: GenerationProgress['status'], message: string, attempt: number, filesDetected?: string[]) => {
+    const report: ReportFn = (status, message, attempt, totalSteps, completedSteps, currentStep) => {
       if (onProgress) {
-        onProgress({ status, message, attempt, filesDetected })
+        onProgress({ status, message, attempt, totalSteps, completedSteps, currentStep })
       }
     }
 
@@ -57,42 +72,169 @@ export class AppGenerator {
 
   private async doGenerate(
     conversationContext: string,
-    report: (status: GenerationProgress['status'], message: string, attempt: number, filesDetected?: string[]) => void,
+    report: ReportFn,
     resolvedAppName: string,
     logger: BuildLogger
   ): Promise<{ success: boolean; appDefinition?: AppDefinition; cczPath?: string; exportPath?: string; hqJsonPath?: string; errors?: string[] }> {
 
-    // Step 1: Generate compact app definition via tool use
-    report('generating', 'Generating app...', 0)
-    logger.logSection('GENERATION')
-    logger.log('Sending generation request to Claude (tool use)...')
+    // ── Tier 1: Scaffold ──────────────────────────────────────────────
 
-    const message = `Here is the full conversation with the user about the app they want:\n\n${conversationContext}\n\nBased on this conversation, generate the compact app definition. App name: "${resolvedAppName}".`
+    report('scaffolding', 'Planning app structure...', 0)
+    logger.logSection('SCAFFOLD')
+    logger.log('Requesting scaffold from Claude...')
 
-    let compact: CompactApp
+    const scaffoldMessage = `Here is the full conversation with the user about the app they want:\n\n${conversationContext}\n\nBased on this conversation, plan the app structure. App name: "${resolvedAppName}".`
+
+    let scaffold: Scaffold
     try {
-      compact = await this.claudeService.sendOneShotStructured(
-        GENERATOR_TOOL_USE_PROMPT, message, compactAppSchema,
-        () => { /* streaming progress — UI shows spinner */ },
-        { maxTokens: 64000 }
+      scaffold = await this.claudeService.sendOneShotStructured(
+        SCAFFOLD_PROMPT, scaffoldMessage, scaffoldSchema,
+        () => {},
+        { maxTokens: 16384 }
       )
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err)
-      logger.log(`FATAL: Tool use generation failed: ${errMsg}`)
-      report('failed', 'Failed to generate app definition from Claude', 0)
-      return { success: false, errors: [`Generation failed: ${errMsg}`] }
+      logger.log(`FATAL: Scaffold generation failed: ${errMsg}`)
+      report('failed', 'Failed to plan app structure', 0)
+      return { success: false, errors: [`Scaffold failed: ${errMsg}`] }
     }
 
-    // Override app name if provided
-    compact.app_name = resolvedAppName
+    scaffold.app_name = resolvedAppName
 
-    logger.log(`Parsed compact: ${compact.modules?.length || 0} modules, ${compact.modules?.reduce((sum: number, m: any) => sum + (m.forms?.length || 0), 0) || 0} forms`)
+    // Calculate total steps for progress tracking
+    const totalSteps = scaffold.modules.length +
+      scaffold.modules.reduce((sum, m) => sum + m.forms.length, 0)
+    let completedSteps = 0
 
-    // Step 2: Validate → fix loop
-    // If the compact JSON has validation errors, we send it to Haiku for fixing.
-    // We track recent error signatures to detect when we're stuck in a loop
-    // (same errors repeating). After MAX_STUCK_REPEATS identical error sets,
-    // we give up and export whatever we have.
+    logger.log(`Scaffold: ${scaffold.modules.length} modules, ${totalSteps - scaffold.modules.length} forms, ${scaffold.case_types?.length ?? 0} case types`)
+
+    // Build case type property lookup
+    const caseTypeProps = new Map<string, Array<{ name: string; label: string }>>()
+    if (scaffold.case_types) {
+      for (const ct of scaffold.case_types) {
+        caseTypeProps.set(ct.name, ct.properties)
+      }
+    }
+
+    // ── Tier 2 + 3: Modules and Forms (depth-first) ──────────────────
+
+    const moduleContents: ModuleContent[] = []
+    const formContents: FormContent[][] = []
+
+    for (let mIdx = 0; mIdx < scaffold.modules.length; mIdx++) {
+      const sm = scaffold.modules[mIdx]
+      report('generating_module', `Building ${sm.name}...`, 0, totalSteps, completedSteps, sm.name)
+      logger.logSection(`MODULE ${mIdx}: ${sm.name}`)
+
+      // Get case type properties for this module
+      const props = sm.case_type ? (caseTypeProps.get(sm.case_type) ?? []) : []
+      const propsDesc = props.length > 0
+        ? `\n\nCase type "${sm.case_type}" has these properties:\n${props.map(p => `- ${p.name}: ${p.label}`).join('\n')}`
+        : ''
+
+      // Tier 2: Module content
+      const moduleMessage = `App: "${scaffold.app_name}" — ${scaffold.description}
+
+Module: "${sm.name}"
+Case type: ${sm.case_type ?? 'none (survey-only)'}
+Purpose: ${sm.purpose}
+Forms: ${sm.forms.map(f => `"${f.name}" (${f.type})`).join(', ')}${propsDesc}
+
+Design the case list columns for this module.`
+
+      let mc: ModuleContent
+      try {
+        mc = await this.claudeService.sendOneShotStructured(
+          MODULE_PROMPT, moduleMessage, moduleContentSchema,
+          () => {},
+          { maxTokens: 4096 }
+        )
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err)
+        logger.log(`WARNING: Module content generation failed: ${errMsg}, using defaults`)
+        mc = { case_list_columns: null }
+      }
+
+      moduleContents.push(mc)
+      completedSteps++
+      logger.log(`Module "${sm.name}": ${mc.case_list_columns?.length ?? 0} case list columns`)
+
+      // Tier 3: Form content (depth-first within this module)
+      const moduleForms: FormContent[] = []
+      // Track registration form's case_properties for followup forms
+      let registrationCaseProps: Record<string, string> | null = null
+
+      for (let fIdx = 0; fIdx < sm.forms.length; fIdx++) {
+        const sf = sm.forms[fIdx]
+        const formStepName = `${sm.name} > ${sf.name}`
+        report('generating_form', `Building ${formStepName}...`, 0, totalSteps, completedSteps, formStepName)
+        logger.logSection(`FORM ${mIdx}.${fIdx}: ${sf.name}`)
+
+        // Build context for the form
+        let formMessage = `App: "${scaffold.app_name}" — ${scaffold.description}
+
+Module: "${sm.name}" (${sm.purpose})
+Case type: ${sm.case_type ?? 'none'}${propsDesc}
+
+Module's case list columns: ${mc.case_list_columns ? JSON.stringify(mc.case_list_columns) : 'none'}
+
+Form: "${sf.name}"
+Type: ${sf.type}
+Purpose: ${sf.purpose}
+
+Sibling forms in this module: ${sm.forms.map(f => `"${f.name}" (${f.type})`).join(', ')}`
+
+        // For followup forms, provide the registration form's case_properties
+        if (sf.type === 'followup' && registrationCaseProps) {
+          formMessage += `\n\nThe registration form's case_properties mapping (property -> question_id): ${JSON.stringify(registrationCaseProps)}\nUse case_preload to pre-fill questions with these case properties where appropriate.`
+        }
+
+        formMessage += '\n\nDesign the questions and case configuration for this form.'
+
+        let fc: FormContent
+        try {
+          fc = await this.claudeService.sendOneShotStructured(
+            FORM_PROMPT, formMessage, formContentSchema,
+            () => {},
+            { maxTokens: 32768 }
+          )
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err)
+          logger.log(`FATAL: Form content generation failed: ${errMsg}`)
+          report('failed', `Failed to generate "${sf.name}"`, 0)
+          return { success: false, errors: [`Form "${sf.name}" failed: ${errMsg}`] }
+        }
+
+        // Track registration form's case_properties for subsequent followup forms
+        if (sf.type === 'registration' && fc.case_properties) {
+          registrationCaseProps = fc.case_properties
+        }
+
+        moduleForms.push(fc)
+        completedSteps++
+        logger.log(`Form "${sf.name}": ${fc.questions.length} questions`)
+      }
+
+      formContents.push(moduleForms)
+    }
+
+    // ── Assembly ──────────────────────────────────────────────────────
+
+    logger.logSection('ASSEMBLY')
+    const blueprint = assembleBlueprint(scaffold, moduleContents, formContents)
+    logger.log(`Assembled blueprint: ${blueprint.modules.length} modules, ${blueprint.modules.reduce((s, m) => s + m.forms.length, 0)} forms`)
+
+    // ── Validate + Fix Loop ──────────────────────────────────────────
+
+    return await this.validateAndFix(blueprint, resolvedAppName, report, logger)
+  }
+
+  private async validateAndFix(
+    blueprint: AppBlueprint,
+    resolvedAppName: string,
+    report: ReportFn,
+    logger: BuildLogger,
+  ): Promise<{ success: boolean; appDefinition?: AppDefinition; cczPath?: string; exportPath?: string; hqJsonPath?: string; errors?: string[] }> {
     const recentErrorSignatures: string[] = []
     const MAX_STUCK_REPEATS = 3
     let attempt = 0
@@ -102,45 +244,35 @@ export class AppGenerator {
       logger.logSection(`VALIDATION ATTEMPT ${attempt}`)
       report('validating', `Validating app definition (attempt ${attempt})...`, attempt)
 
-      // Validate compact format
-      const errors = validateCompact(compact)
-      logger.log(`Compact validation: ${errors.length} error(s)`)
-      for (const err of errors) {
-        logger.log(`  ERROR: ${err}`)
-      }
+      const errors = validateBlueprint(blueprint)
+      logger.log(`Validation: ${errors.length} error(s)`)
+      for (const err of errors) logger.log(`  ERROR: ${err}`)
 
       if (errors.length === 0) {
-        logger.log('RESULT: SUCCESS — compact validated')
-        report('generating', 'Expanding to HQ format...', attempt)
+        logger.log('RESULT: SUCCESS — blueprint validated')
+        report('expanding', 'Expanding to HQ format...', attempt)
 
-        // Expand to full HQ JSON
-        const hqJson = expandToHqJson(compact)
+        const hqJson = expandBlueprint(blueprint)
 
-        // Run HQ JSON validation as a safety check
         const hqErrors = this.validateHqJson(hqJson)
         if (hqErrors.length > 0) {
-          logger.log(`WARNING: HQ JSON validation found ${hqErrors.length} issue(s) after expansion:`)
-          for (const err of hqErrors) {
-            logger.log(`  HQ ERROR: ${err}`)
-          }
-          // These shouldn't happen if the expander is correct, but log them
+          logger.log(`WARNING: HQ JSON validation found ${hqErrors.length} issue(s):`)
+          for (const err of hqErrors) logger.log(`  HQ ERROR: ${err}`)
         }
 
         report('success', 'App generated and validated!', attempt)
         return await this.exportResults(hqJson, resolvedAppName, logger)
       }
 
-      // Stuck detection: hash errors into a signature, keep a sliding window of
-      // the last N signatures. If all N are identical, the fixer isn't making progress.
+      // Stuck detection
       const sig = errors.slice().sort().join('|||')
       recentErrorSignatures.push(sig)
       if (recentErrorSignatures.length > MAX_STUCK_REPEATS) recentErrorSignatures.shift()
       if (recentErrorSignatures.length === MAX_STUCK_REPEATS && recentErrorSignatures.every(s => s === sig)) {
         logger.log(`RESULT: FAILED — same errors repeated ${MAX_STUCK_REPEATS} times`)
         report('failed', `Unable to resolve: ${errors[0]?.substring(0, 200)}`, attempt)
-        // Still try to export what we have
         try {
-          const hqJson = expandToHqJson(compact)
+          const hqJson = expandBlueprint(blueprint)
           const result = await this.exportResults(hqJson, resolvedAppName, logger)
           return { ...result, success: false, errors }
         } catch {
@@ -148,39 +280,124 @@ export class AppGenerator {
         }
       }
 
-      // Fix with Claude via tool use
-      logger.logSection(`FIX ATTEMPT ${attempt}`)
-      const errorPreview = errors.slice(0, 3).join('; ').substring(0, 150)
-      report('fixing', `Fixing: ${errorPreview}`, attempt)
-
-      const compactStr = JSON.stringify(compact, null, 2)
-      const fixMessage = `## Validation Errors\n${errors.join('\n')}\n\n## Current App Definition\n${compactStr}`
-
-      logger.log(`Sending fix request to Claude (Haiku, tool use)... (${fixMessage.length} chars)`)
-
-      let fixedCompact: CompactApp
-      try {
-        fixedCompact = await this.claudeService.sendOneShotStructured(
-          FIXER_TOOL_USE_PROMPT, fixMessage, compactAppSchema,
-          () => { /* streaming progress */ },
-          { model: 'claude-haiku-4-5-20251001', maxTokens: 32768 }
-        )
-      } catch (err) {
-        const errMsg = err instanceof Error ? err.message : String(err)
-        logger.log(`FATAL: Tool use fix failed: ${errMsg}`)
-        report('failed', 'Failed to parse fixed app definition from Claude', attempt)
-        try {
-          const hqJson = expandToHqJson(compact)
-          const result = await this.exportResults(hqJson, resolvedAppName, logger)
-          return { ...result, success: false, errors: [`Fix failed: ${errMsg}`] }
-        } catch {
-          return { success: false, errors: [`Fix failed: ${errMsg}`] }
+      // Fix module-level errors programmatically
+      for (const err of errors) {
+        const match = err.match(/"([^"]+)" has case forms but no case_type/)
+        if (match) {
+          const modName = match[1]
+          const mod = blueprint.modules.find(m => m.name === modName)
+          if (mod && !mod.case_type) {
+            mod.case_type = modName.toLowerCase().replace(/\s+/g, '_')
+            logger.log(`Auto-fixed: set case_type for "${modName}" to "${mod.case_type}"`)
+          }
         }
       }
 
-      compact = fixedCompact
-      compact.app_name = resolvedAppName
+      // Group errors by form and fix per-form
+      logger.logSection(`FIX ATTEMPT ${attempt}`)
+      const formErrors = this.groupErrorsByForm(errors, blueprint)
+
+      for (const [formName, formErrs] of formErrors) {
+        report('fixing', `Fixing ${formName} (attempt ${attempt})...`, attempt, undefined, undefined, formName)
+
+        const [mIdx, fIdx] = this.findFormIndices(blueprint, formName)
+        if (mIdx === -1) {
+          logger.log(`WARNING: Could not find form "${formName}" to fix, skipping`)
+          continue
+        }
+
+        const form = blueprint.modules[mIdx].forms[fIdx]
+        const currentContent = {
+          case_name_field: form.case_name_field ?? null,
+          case_properties: form.case_properties ?? null,
+          case_preload: form.case_preload ?? null,
+          close_case: closeCaseToFlat(form.close_case),
+          child_cases: form.child_cases?.map(c => ({
+            case_type: c.case_type,
+            case_name_field: c.case_name_field,
+            case_properties: c.case_properties ?? null,
+            relationship: c.relationship ?? null,
+            repeat_context: c.repeat_context ?? null,
+          })) ?? null,
+          questions: flattenQuestions(form.questions),
+        }
+
+        const fixMessage = `## Validation Errors\n${formErrs.join('\n')}\n\n## Current Form Content\n${JSON.stringify(currentContent, null, 2)}`
+
+        try {
+          const fixed = await this.claudeService.sendOneShotStructured(
+            FORM_FIXER_PROMPT, fixMessage, formContentSchema,
+            () => {},
+            { model: 'claude-haiku-4-5-20251001', maxTokens: 32768 }
+          )
+
+          // Reassemble the fixed form back into the blueprint
+          blueprint.modules[mIdx].forms[fIdx] = this.reassembleForm(form.name, form.type, fixed)
+          logger.log(`Fixed "${formName}": ${fixed.questions.length} questions`)
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err)
+          logger.log(`WARNING: Fix failed for "${formName}": ${errMsg}`)
+        }
+      }
     }
+  }
+
+  /** Reassemble a FormContent back into a BlueprintForm */
+  private reassembleForm(name: string, type: 'registration' | 'followup' | 'survey', fc: FormContent): BlueprintForm {
+    const closeCase = fc.close_case == null ? undefined : {
+      ...(fc.close_case.question != null && { question: fc.close_case.question }),
+      ...(fc.close_case.answer != null && { answer: fc.close_case.answer }),
+    }
+
+    const childCases = fc.child_cases?.map(c => ({
+      case_type: c.case_type,
+      case_name_field: c.case_name_field,
+      ...(c.case_properties != null && { case_properties: c.case_properties }),
+      ...(c.relationship != null && { relationship: c.relationship }),
+      ...(c.repeat_context != null && { repeat_context: c.repeat_context }),
+    }))
+
+    return {
+      name,
+      type,
+      ...(fc.case_name_field != null && { case_name_field: fc.case_name_field }),
+      ...(fc.case_properties != null && { case_properties: fc.case_properties }),
+      ...(fc.case_preload != null && { case_preload: fc.case_preload }),
+      ...(closeCase !== undefined && { close_case: closeCase }),
+      ...(childCases !== undefined && { child_cases: childCases }),
+      questions: unflattenQuestions(fc.questions),
+    }
+  }
+
+  /** Group validation errors by form name */
+  private groupErrorsByForm(errors: string[], blueprint: AppBlueprint): Map<string, string[]> {
+    const grouped = new Map<string, string[]>()
+    for (const err of errors) {
+      const match = err.match(/^"([^"]+)"/)
+      if (match) {
+        const name = match[1]
+        const isForm = blueprint.modules.some(m => m.forms.some(f => f.name === name))
+        if (isForm) {
+          if (!grouped.has(name)) grouped.set(name, [])
+          grouped.get(name)!.push(err)
+          continue
+        }
+      }
+      // Module-level or unrecognized errors are handled programmatically above
+    }
+    return grouped
+  }
+
+  /** Find module and form indices by form name */
+  private findFormIndices(blueprint: AppBlueprint, formName: string): [number, number] {
+    for (let mIdx = 0; mIdx < blueprint.modules.length; mIdx++) {
+      for (let fIdx = 0; fIdx < blueprint.modules[mIdx].forms.length; fIdx++) {
+        if (blueprint.modules[mIdx].forms[fIdx].name === formName) {
+          return [mIdx, fIdx]
+        }
+      }
+    }
+    return [-1, -1]
   }
 
   /** Validate HQ JSON structure after expansion. Safety net for expander bugs. */
@@ -274,11 +491,16 @@ export class AppGenerator {
     }
   }
 
-  /** Best-effort app name extraction from the first user message in the conversation. */
+  /**
+   * Best-effort app name extraction from the first user message.
+   * Strips common request prefixes ("Build me a...", "Create a...") and
+   * takes the first 5 words as the app name.
+   */
   private inferAppName(context: string): string {
     const firstLine = context.split('\n').find(l => l.startsWith('User:'))
     if (firstLine) {
       let desc = firstLine.replace('User:', '').trim()
+      // Strip common request prefixes to get to the actual app description
       desc = desc.replace(
         /^(I need|I want|Create|Build|Make|Generate|Design|Develop|Help me build|Help me create|Can you build|Can you create|Please create|Please build)\s+(a|an|the|me a|me an)?\s*/i,
         ''

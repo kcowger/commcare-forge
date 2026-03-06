@@ -2,13 +2,13 @@
  * MCP server entry point — exposes CommCare app building as MCP tools.
  *
  * This lets any MCP-compatible LLM (Claude Desktop, Cursor, etc.) validate
- * and build CommCare apps by calling tools with structured compact JSON input.
+ * and build CommCare apps by calling tools with structured blueprint JSON input.
  *
- * The tools use the shared Zod schema from `backend/src/schemas/compactApp.ts`,
+ * The tools use the shared Zod schema from `backend/src/schemas/blueprint.ts`,
  * so the LLM sees full field-level descriptions and type constraints in the
  * tool schema — no need to read a separate resource to understand the format.
  *
- * Resources (commcare://reference, commcare://compact-schema) are still
+ * Resources (commcare://reference, commcare://blueprint-schema) are still
  * available for deeper reference when the LLM needs behavioral guidance
  * beyond what the schema descriptions provide.
  */
@@ -17,7 +17,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import { readResource } from './resources.js'
 import { handleValidate, handleBuild } from './tools.js'
-import { compactAppSchema } from '../../backend/src/schemas/compactApp'
+import { appBlueprintSchema } from '../../backend/src/schemas/blueprint'
 
 const server = new McpServer({
   name: 'commcare-forge',
@@ -35,9 +35,9 @@ server.resource(
 )
 
 server.resource(
-  'commcare-compact-schema',
-  'commcare://compact-schema',
-  { description: 'Compact JSON format specification for defining CommCare applications', mimeType: 'text/markdown' },
+  'commcare-blueprint-schema',
+  'commcare://blueprint-schema',
+  { description: 'App Blueprint format specification for defining CommCare applications', mimeType: 'text/markdown' },
   async (uri) => ({
     contents: [{ uri: uri.href, text: readResource(uri.href), mimeType: 'text/markdown' }]
   })
@@ -46,12 +46,12 @@ server.resource(
 // Register tools
 server.tool(
   'validate_commcare_app',
-  'Validates a CommCare compact JSON app definition. Returns { valid: true } or { valid: false, errors: [...] }.',
+  'Validates a CommCare app blueprint JSON definition. Returns { valid: true } or { valid: false, errors: [...] }.',
   {
-    compact_json: compactAppSchema.describe('The compact app definition with app_name and modules array')
+    blueprint: appBlueprintSchema.describe('The app blueprint definition with app_name and modules array')
   },
-  async ({ compact_json }) => {
-    const result = await handleValidate({ compact_json })
+  async ({ blueprint }) => {
+    const result = await handleValidate({ blueprint })
     return {
       content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }]
     }
@@ -60,13 +60,13 @@ server.tool(
 
 server.tool(
   'build_commcare_app',
-  'Builds a CommCare app from validated compact JSON. Writes .ccz and .hq.json to output_dir.',
+  'Builds a CommCare app from a validated app blueprint. Writes .ccz and .hq.json to output_dir.',
   {
-    compact_json: compactAppSchema.describe('A validated compact app definition'),
+    blueprint: appBlueprintSchema.describe('A validated app blueprint definition'),
     output_dir: z.string().optional().describe('Output directory path. Defaults to ./commcare-output/')
   },
-  async ({ compact_json, output_dir }) => {
-    const result = await handleBuild({ compact_json, output_dir })
+  async ({ blueprint, output_dir }) => {
+    const result = await handleBuild({ blueprint, output_dir })
     return {
       content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }]
     }

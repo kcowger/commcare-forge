@@ -1,6 +1,6 @@
-# CommCare Compact JSON Format Specification
+# CommCare App Blueprint Format Specification
 
-This document defines the compact JSON format used to describe CommCare application structures. It covers the top-level schema, all field definitions, supported question types, reserved property names, type selection guidelines, and case lifecycle patterns.
+This document defines the app blueprint format used to describe CommCare application structures. It covers the top-level schema, all field definitions, supported question types, reserved property names, type selection guidelines, and case lifecycle patterns.
 
 ## JSON Structure
 
@@ -18,7 +18,7 @@ This document defines the compact JSON format used to describe CommCare applicat
           "case_name_field": "question_id_for_case_name",
           "case_properties": { "case_prop": "question_id" },
           "case_preload": { "question_id": "case_prop" },
-          "close_case": true | {"question": "question_id", "answer": "value"},
+          "close_case": {} | {"question": "question_id", "answer": "value"},
           "child_cases": [{"case_type": "child_type", "case_name_field": "question_id", "case_properties": {"prop": "question_id"}, "relationship": "child"}],
           "questions": [
             { "id": "field_id", "type": "text", "label": "Label", "required": true },
@@ -58,7 +58,7 @@ This document defines the compact JSON format used to describe CommCare applicat
   - To load the case name, use "case_name" as the value (reading reserved properties is fine).
   - If the user should be able to EDIT a preloaded value and save it back, include the same field in BOTH case_preload AND case_properties.
 - **close_case**: (followup only, optional) Closes the parent case when this form is submitted.
-  - Set to `true` for forms that ALWAYS close the case (e.g., dedicated "Close Case" or "Discharge" forms).
+  - Set to `{}` (empty object) for forms that ALWAYS close the case (e.g., dedicated "Close Case" or "Discharge" forms).
   - Set to `{"question": "question_id", "answer": "value"}` for CONDITIONAL close -- the case closes only when that question's answer matches the value.
   - Omit entirely if the form should NOT close the case (default).
   - Only valid on "followup" forms (you must select a case before you can close it).
@@ -136,19 +136,19 @@ Always use the most specific question type available:
 
 ## Case Lifecycle -- Closing Cases and Creating Child Cases
 
-The compact JSON format supports the full lifecycle of a case, not just registration and updates. Cases can be closed and child cases can be created as part of form submissions.
+The blueprint format supports the full lifecycle of a case, not just registration and updates. Cases can be closed and child cases can be created as part of form submissions.
 
 ### Closing Cases
 
 Set `close_case` on followup forms to close a case. Common patterns:
 
-- Dedicated close/end forms: "Close Case", "Discharge Patient", "Exit Program", "Archive Record", "End Treatment" --> close_case: true
-- Death or final outcome forms: "Death Notification", "Final Assessment", "Case Resolution" --> close_case: true
+- Dedicated close/end forms: "Close Case", "Discharge Patient", "Exit Program", "Archive Record", "End Treatment" --> close_case: {}
+- Death or final outcome forms: "Death Notification", "Final Assessment", "Case Resolution" --> close_case: {}
 - Forms with outcome questions where some answers mean the case is done:
   - "Outcome" with "discharged", "deceased", "transferred out", "completed" --> close_case: {"question": "outcome", "answer": "discharged"}
   - "Program Status" with "graduated", "dropped out", "completed" --> conditional close on the exit answer
-- If a form ALWAYS closes the case (no conditional logic needed), use close_case: true
-- If only SOME outcomes close the case, use close_case: {"question": "id", "answer": "closing_value"} -- pick the one closing answer, or use close_case: true with a required confirmation question
+- If a form ALWAYS closes the case (no conditional logic needed), use close_case: {} (empty object)
+- If only SOME outcomes close the case, use close_case: {"question": "id", "answer": "closing_value"} -- pick the one closing answer, or use close_case: {} with a required confirmation question
 
 ### Creating Child Cases
 

@@ -6,7 +6,7 @@ describe('MCP Resources', () => {
     const resources = getResources()
     expect(resources).toHaveLength(2)
     expect(resources.map(r => r.uri)).toContain('commcare://reference')
-    expect(resources.map(r => r.uri)).toContain('commcare://compact-schema')
+    expect(resources.map(r => r.uri)).toContain('commcare://blueprint-schema')
   })
 
   it('reads the CommCare reference', () => {
@@ -15,8 +15,8 @@ describe('MCP Resources', () => {
     expect(content).toContain('<h:html')
   })
 
-  it('reads the compact JSON schema', () => {
-    const content = readResource('commcare://compact-schema')
+  it('reads the blueprint schema', () => {
+    const content = readResource('commcare://blueprint-schema')
     expect(content).toContain('app_name')
     expect(content).toContain('case_type')
     expect(content).toContain('Reserved Case Property Names')

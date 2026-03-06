@@ -1,13 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react'
 
 interface ProgressTrackerProps {
-  status: 'generating' | 'validating' | 'fixing' | 'success' | 'failed'
+  status: 'scaffolding' | 'generating_module' | 'generating_form' | 'validating' | 'fixing' | 'expanding' | 'success' | 'failed'
   message: string
   attempt: number
-  filesDetected?: string[]
+  totalSteps?: number
+  completedSteps?: number
+  currentStep?: string
 }
 
-export default function ProgressTracker({ status, message, attempt, filesDetected }: ProgressTrackerProps) {
+export default function ProgressTracker({ status, message, attempt, totalSteps, completedSteps, currentStep }: ProgressTrackerProps) {
   const isActive = status !== 'success' && status !== 'failed'
   const isSuccess = status === 'success'
   const isFailed = status === 'failed'
@@ -33,10 +35,23 @@ export default function ProgressTracker({ status, message, attempt, filesDetecte
     return m > 0 ? `${m}m ${s}s` : `${s}s`
   }
 
-  // Map status to step number
-  const stepMap: Record<string, number> = { generating: 1, validating: 2, fixing: 2, success: 3, failed: 3 }
-  const currentStep = stepMap[status] || 1
-  const steps = ['Generate', 'Validate', 'Done']
+  // Map status to step number (4 steps: Structure, Building, Validate, Done)
+  const stepMap: Record<string, number> = {
+    scaffolding: 1,
+    generating_module: 2,
+    generating_form: 2,
+    validating: 3,
+    fixing: 3,
+    expanding: 3,
+    success: 4,
+    failed: 4
+  }
+  const currentStepNum = stepMap[status] || 1
+  const steps = ['Structure', 'Building', 'Validate', 'Done']
+
+  // Progress bar for step 2 (Building)
+  const showProgressBar = (status === 'generating_module' || status === 'generating_form') && totalSteps && totalSteps > 0
+  const progressPct = showProgressBar && completedSteps != null ? Math.round((completedSteps / totalSteps!) * 100) : 0
 
   return (
     <div className={`rounded-xl border px-4 py-3 text-sm ${
@@ -49,8 +64,8 @@ export default function ProgressTracker({ status, message, attempt, filesDetecte
         <div className="flex items-center gap-1 mb-3">
           {steps.map((step, i) => {
             const stepNum = i + 1
-            const isCurrentStep = stepNum === currentStep
-            const isCompleted = stepNum < currentStep
+            const isCurrentStep = stepNum === currentStepNum
+            const isCompleted = stepNum < currentStepNum
             return (
               <React.Fragment key={step}>
                 <div className={`flex items-center gap-1.5 ${
@@ -78,6 +93,22 @@ export default function ProgressTracker({ status, message, attempt, filesDetecte
           <span className="text-white/30 ml-auto text-xs tabular-nums">
             {formatTime(elapsed)}
           </span>
+        </div>
+      )}
+
+      {/* Progress bar for Building step */}
+      {showProgressBar && (
+        <div className="mb-2">
+          <div className="flex items-center justify-between text-[11px] text-white/40 mb-1">
+            <span>{currentStep || 'Building...'}</span>
+            <span>{completedSteps}/{totalSteps}</span>
+          </div>
+          <div className="h-1.5 rounded-full bg-white/5 overflow-hidden">
+            <div
+              className="h-full rounded-full bg-accent/60 transition-all duration-300"
+              style={{ width: `${progressPct}%` }}
+            />
+          </div>
         </div>
       )}
 
@@ -109,20 +140,6 @@ export default function ProgressTracker({ status, message, attempt, filesDetecte
           )}
         </span>
       </div>
-
-      {/* Files detected during generation */}
-      {filesDetected && filesDetected.length > 0 && isActive && (
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {filesDetected.map((file) => (
-            <span key={file} className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-accent/10 text-[11px] text-accent/80">
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <polyline points="20 6 9 17 4 12" />
-              </svg>
-              {file}
-            </span>
-          ))}
-        </div>
-      )}
     </div>
   )
 }

@@ -41,10 +41,12 @@ export interface HqFetchResult {
 }
 
 export interface GenerationProgress {
-  status: 'generating' | 'validating' | 'fixing' | 'success' | 'failed'
+  status: 'scaffolding' | 'generating_module' | 'generating_form' | 'validating' | 'fixing' | 'expanding' | 'success' | 'failed'
   message: string
   attempt: number
-  filesDetected?: string[]
+  totalSteps?: number
+  completedSteps?: number
+  currentStep?: string
 }
 
 export interface GenerationResult {

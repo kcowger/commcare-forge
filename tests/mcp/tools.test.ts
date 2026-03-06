@@ -6,9 +6,9 @@ import { tmpdir } from 'os'
 import { randomUUID } from 'crypto'
 
 describe('validate_commcare_app', () => {
-  it('returns valid for a correct compact JSON', async () => {
+  it('returns valid for a correct blueprint', async () => {
     const result = await handleValidate({
-      compact_json: {
+      blueprint: {
         app_name: 'Test App',
         modules: [{
           name: 'Patients',
@@ -30,7 +30,7 @@ describe('validate_commcare_app', () => {
 
   it('returns errors for missing case_type', async () => {
     const result = await handleValidate({
-      compact_json: {
+      blueprint: {
         app_name: 'Test App',
         modules: [{
           name: 'Patients',
@@ -52,11 +52,11 @@ describe('validate_commcare_app', () => {
 
   // Missing app_name and empty modules are now caught by the Zod schema
   // at the MCP/tool boundary before handleValidate runs.
-  // See tests/schemas/compactApp.test.ts for those validations.
+  // See tests/schemas/blueprint.test.ts for those validations.
 
   it('returns errors for reserved property names in case_properties', async () => {
     const result = await handleValidate({
-      compact_json: {
+      blueprint: {
         app_name: 'Test App',
         modules: [{
           name: 'Mod',
@@ -80,7 +80,7 @@ describe('validate_commcare_app', () => {
 
   it('returns errors for registration form without case_name_field', async () => {
     const result = await handleValidate({
-      compact_json: {
+      blueprint: {
         app_name: 'Test App',
         modules: [{
           name: 'Mod',
@@ -101,7 +101,7 @@ describe('validate_commcare_app', () => {
 
   it('returns errors for form with no questions', async () => {
     const result = await handleValidate({
-      compact_json: {
+      blueprint: {
         app_name: 'Test App',
         modules: [{
           name: 'Mod',
@@ -121,7 +121,7 @@ describe('validate_commcare_app', () => {
 
   it('returns errors for select question without options', async () => {
     const result = await handleValidate({
-      compact_json: {
+      blueprint: {
         app_name: 'Test App',
         modules: [{
           name: 'Mod',
@@ -141,7 +141,7 @@ describe('validate_commcare_app', () => {
 
   it('validates a valid survey app (no case_type needed)', async () => {
     const result = await handleValidate({
-      compact_json: {
+      blueprint: {
         app_name: 'Survey App',
         modules: [{
           name: 'Surveys',
@@ -160,7 +160,7 @@ describe('validate_commcare_app', () => {
 
   it('returns errors for case_properties mapping to nonexistent question', async () => {
     const result = await handleValidate({
-      compact_json: {
+      blueprint: {
         app_name: 'Test App',
         modules: [{
           name: 'Mod',
@@ -183,7 +183,7 @@ describe('validate_commcare_app', () => {
 
   it('returns errors for case_name_field referencing nonexistent question', async () => {
     const result = await handleValidate({
-      compact_json: {
+      blueprint: {
         app_name: 'Test App',
         modules: [{
           name: 'Mod',
@@ -215,7 +215,7 @@ describe('build_commcare_app', () => {
 
   it('builds a valid app and writes .ccz and .hq.json', async () => {
     const result = await handleBuild({
-      compact_json: {
+      blueprint: {
         app_name: 'Test App',
         modules: [{
           name: 'Patients',
@@ -242,9 +242,9 @@ describe('build_commcare_app', () => {
     expect(existsSync(result.hq_json_path!)).toBe(true)
   })
 
-  it('returns errors for compact JSON with semantic validation issues', async () => {
+  it('returns errors for blueprint with semantic validation issues', async () => {
     const result = await handleBuild({
-      compact_json: {
+      blueprint: {
         app_name: 'Test App',
         modules: [{
           name: 'Mod',
@@ -262,9 +262,9 @@ describe('build_commcare_app', () => {
     expect(result.errors!.length).toBeGreaterThan(0)
   })
 
-  it('returns errors for compact JSON with reserved case properties', async () => {
+  it('returns errors for blueprint with reserved case properties', async () => {
     const result = await handleBuild({
-      compact_json: {
+      blueprint: {
         app_name: 'Test App',
         modules: [{
           name: 'Mod',
@@ -288,7 +288,7 @@ describe('build_commcare_app', () => {
   it('builds a survey app without case management', async () => {
     const surveyOutputDir = join(testOutputDir, 'survey')
     const result = await handleBuild({
-      compact_json: {
+      blueprint: {
         app_name: 'Survey App',
         modules: [{
           name: 'Surveys',
@@ -317,7 +317,7 @@ describe('build_commcare_app', () => {
     const defaultDir = join(process.cwd(), 'commcare-output')
     try {
       const result = await handleBuild({
-        compact_json: {
+        blueprint: {
           app_name: 'Default Dir App',
           modules: [{
             name: 'Mod',
@@ -352,7 +352,7 @@ describe('getToolDefinitions', () => {
     const validate = tools.find(t => t.name === 'validate_commcare_app')
     expect(validate).toBeDefined()
     expect(validate!.description).toContain('Validates')
-    expect(validate!.inputSchema.required).toContain('compact_json')
+    expect(validate!.inputSchema.required).toContain('blueprint')
   })
 
   it('defines build_commcare_app tool', () => {
@@ -360,7 +360,7 @@ describe('getToolDefinitions', () => {
     const build = tools.find(t => t.name === 'build_commcare_app')
     expect(build).toBeDefined()
     expect(build!.description).toContain('Builds')
-    expect(build!.inputSchema.required).toContain('compact_json')
+    expect(build!.inputSchema.required).toContain('blueprint')
     expect(build!.inputSchema.properties.output_dir).toBeDefined()
   })
 

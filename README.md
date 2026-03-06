@@ -127,10 +127,10 @@ The repo includes a `.mcp.json` that Claude Code picks up automatically when you
 
 **Resources** (CommCare knowledge for Claude Code):
 - `commcare://reference` — XForm, Suite XML, and Case XML structure reference
-- `commcare://compact-schema` — Compact JSON format specification
+- `commcare://blueprint-schema` — App blueprint format specification
 
 **Tools:**
-- `validate_commcare_app` — Validates a compact JSON app definition
+- `validate_commcare_app` — Validates an app blueprint definition
 - `build_commcare_app` — Builds a validated app into `.ccz` and HQ JSON files
 
 ### Usage
@@ -139,7 +139,7 @@ With the MCP server running, ask Claude Code to build a CommCare app:
 
 > Build me a CommCare app for tracking prenatal visits with registration and follow-up forms.
 
-Claude Code will read the CommCare reference materials, generate the compact JSON, validate it, and build the final `.ccz` file — all automatically.
+Claude Code will read the CommCare reference materials, generate an app blueprint, validate it, and build the final `.ccz` file — all automatically.
 
 No Anthropic API key is needed in the MCP server — Claude Code is the AI.
 

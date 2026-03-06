@@ -1,5 +1,5 @@
 import { randomBytes } from 'crypto'
-import type { CompactApp, CompactForm, CompactQuestion } from '../schemas/compactApp'
+import type { AppBlueprint, BlueprintForm, BlueprintQuestion } from '../schemas/blueprint'
 
 /** Reserved case property names — HQ rejects these in update_case */
 const RESERVED_CASE_PROPERTIES = new Set([
@@ -14,40 +14,41 @@ const RESERVED_CASE_PROPERTIES = new Set([
 const MEDIA_QUESTION_TYPES = new Set(['image', 'audio', 'video', 'signature'])
 
 /**
- * Expands a compact app definition into the full HQ import JSON.
- * All boilerplate, doc_types, unique_ids, xmlns, and XForm XML are generated here.
+ * Expand an AppBlueprint into the full HQ import JSON.
+ *
+ * Generates all boilerplate that CommCare HQ expects: doc_types, unique_ids,
+ * xmlns, XForm XML with itext/binds/body, form actions, case details, etc.
+ * The output can be imported directly into HQ or compiled into a .ccz.
  */
-export function expandToHqJson(compact: CompactApp): Record<string, any> {
+export function expandBlueprint(blueprint: AppBlueprint): Record<string, any> {
   const attachments: Record<string, string> = {}
   const modules: any[] = []
 
-  for (let mIdx = 0; mIdx < compact.modules.length; mIdx++) {
-    const cm = compact.modules[mIdx]
+  for (let mIdx = 0; mIdx < blueprint.modules.length; mIdx++) {
+    const bm = blueprint.modules[mIdx]
     const moduleUniqueId = genHexId()
-    const hasCases = cm.case_type && cm.forms.some(f => f.type !== 'survey')
-    const caseType = hasCases ? cm.case_type! : ''
+    const hasCases = bm.case_type && bm.forms.some(f => f.type !== 'survey')
+    const caseType = hasCases ? bm.case_type! : ''
 
     const forms: any[] = []
 
-    for (let fIdx = 0; fIdx < cm.forms.length; fIdx++) {
-      const cf = cm.forms[fIdx]
+    for (let fIdx = 0; fIdx < bm.forms.length; fIdx++) {
+      const bf = bm.forms[fIdx]
       const formUniqueId = genHexId()
       const xmlns = `http://openrosa.org/formdesigner/${genShortId()}`
 
-      // Generate XForm XML
-      const xform = buildXForm(cf, xmlns)
+      const xform = buildXForm(bf, xmlns)
       attachments[`${formUniqueId}.xml`] = xform
 
-      // Build form actions (with reserved word filtering)
-      const actions = buildFormActions(cf, caseType)
+      const actions = buildFormActions(bf, caseType)
 
       forms.push({
         doc_type: 'Form',
         form_type: 'module_form',
         unique_id: formUniqueId,
-        name: { en: cf.name },
+        name: { en: bf.name },
         xmlns,
-        requires: cf.type === 'followup' ? 'case' : 'none',
+        requires: bf.type === 'followup' ? 'case' : 'none',
         version: null,
         actions,
         case_references_data: { load: {}, save: {}, doc_type: 'CaseReferences' },
@@ -60,14 +61,13 @@ export function expandToHqJson(compact: CompactApp): Record<string, any> {
       })
     }
 
-    // Build case details
-    const caseDetails = hasCases ? buildCaseDetails(cm.case_list_columns || []) : buildEmptyCaseDetails()
+    const caseDetails = hasCases ? buildCaseDetails(bm.case_list_columns || []) : buildEmptyCaseDetails()
 
     modules.push({
       doc_type: 'Module',
       module_type: 'basic',
       unique_id: moduleUniqueId,
-      name: { en: cm.name },
+      name: { en: bm.name },
       case_type: caseType,
       put_in_root: false,
       root_module_id: null,
@@ -87,7 +87,7 @@ export function expandToHqJson(compact: CompactApp): Record<string, any> {
   return {
     doc_type: 'Application',
     application_version: '2.0',
-    name: compact.app_name,
+    name: blueprint.app_name,
     langs: ['en'],
     build_spec: { doc_type: 'BuildSpec', version: '2.53.0', build_number: null },
     profile: { doc_type: 'Profile', features: {}, properties: {} },
@@ -102,20 +102,23 @@ export function expandToHqJson(compact: CompactApp): Record<string, any> {
   }
 }
 
+/** Generate a 40-char hex ID for HQ unique_id fields. */
 function genHexId(): string {
   return randomBytes(20).toString('hex')
 }
 
+/** Generate a 16-char hex ID for xmlns URIs. */
 function genShortId(): string {
   return randomBytes(8).toString('hex')
 }
 
+/** Escape special XML characters in attribute values and text content. */
 function escapeXml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;')
 }
 
 /** Build complete XForm XML from question definitions. */
-function buildXForm(form: CompactForm, xmlns: string): string {
+function buildXForm(form: BlueprintForm, xmlns: string): string {
   const questions = form.questions || []
   const dataElements: string[] = []
   const binds: string[] = []
@@ -159,8 +162,17 @@ ${bodyContent}
 </h:html>`
 }
 
+/**
+ * Recursively generate the four XForm parts for a question:
+ * - dataElements: <instance> data nodes
+ * - binds: <bind> elements with type, required, constraint, etc.
+ * - itextEntries: <itext> translation entries for labels/hints/options
+ * - bodyElements: <h:body> input/select/group elements
+ *
+ * Groups and repeats recurse into their children, building nested paths.
+ */
 function buildQuestionParts(
-  q: CompactQuestion,
+  q: BlueprintQuestion,
   parentPath: string,
   dataElements: string[],
   binds: string[],
@@ -283,6 +295,7 @@ function buildQuestionParts(
   }
 }
 
+/** Map question type to XForm appearance attribute (e.g. "phone" → "numeric"). */
 function getAppearance(type: string): string | null {
   switch (type) {
     case 'phone': return 'numeric'
@@ -290,6 +303,7 @@ function getAppearance(type: string): string | null {
   }
 }
 
+/** Map question type to its XSD type for XForm <bind> elements. */
 function getXsdType(type: string): string | null {
   switch (type) {
     case 'text': return 'xsd:string'
@@ -317,8 +331,30 @@ function getXsdType(type: string): string | null {
   }
 }
 
-/** Build form actions based on form type and case config. Filters reserved words. */
-function buildFormActions(form: CompactForm, caseType: string): any {
+/**
+ * Resolve a question ID to its full /data/... path (including parent groups/repeats).
+ * Questions inside groups need paths like /data/group_id/question_id.
+ */
+function resolveQuestionPath(questions: BlueprintQuestion[], questionId: string, prefix = '/data'): string | null {
+  for (const q of questions) {
+    if (q.id === questionId) return `${prefix}/${q.id}`
+    if ((q.type === 'group' || q.type === 'repeat') && q.children) {
+      const found = resolveQuestionPath(q.children, questionId, `${prefix}/${q.id}`)
+      if (found) return found
+    }
+  }
+  return null
+}
+
+/**
+ * Build the HQ FormActions object for a form.
+ *
+ * Maps blueprint case config (case_properties, case_preload, close_case,
+ * child_cases) to HQ's action format with question_path references.
+ * Silently filters reserved property names and media questions.
+ * All question paths are resolved through the group/repeat hierarchy.
+ */
+function buildFormActions(form: BlueprintForm, caseType: string): any {
   const neverCondition: Record<string, any> = { type: 'never', question: null, answer: null, operator: null, doc_type: 'FormActionCondition' }
   const alwaysCondition: Record<string, any> = { type: 'always', question: null, answer: null, operator: null, doc_type: 'FormActionCondition' }
 
@@ -352,7 +388,7 @@ function buildFormActions(form: CompactForm, caseType: string): any {
     const updateMap: Record<string, any> = {}
     if (!caseProperties) return updateMap
     // Build a lookup of question id → type for media filtering
-    function getQuestionType(questions: CompactQuestion[], id: string): string | undefined {
+    function getQuestionType(questions: BlueprintQuestion[], id: string): string | undefined {
       for (const q of questions) {
         if (q.id === id) return q.type
         if ((q.type === 'group' || q.type === 'repeat') && q.children) {
@@ -366,7 +402,8 @@ function buildFormActions(form: CompactForm, caseType: string): any {
       if (RESERVED_CASE_PROPERTIES.has(caseProp)) continue // skip reserved words
       const qType = getQuestionType(form.questions || [], questionId)
       if (qType && MEDIA_QUESTION_TYPES.has(qType)) continue // skip media/binary questions
-      updateMap[caseProp] = { question_path: `/data/${questionId}`, update_mode: 'always' }
+      const qPath = resolveQuestionPath(form.questions || [], questionId) || `/data/${questionId}`
+      updateMap[caseProp] = { question_path: qPath, update_mode: 'always' }
     }
     return updateMap
   }
@@ -374,7 +411,8 @@ function buildFormActions(form: CompactForm, caseType: string): any {
   if (form.type === 'registration') {
     // Open case
     base.open_case.condition = { ...alwaysCondition }
-    base.open_case.name_update.question_path = `/data/${form.case_name_field || form.questions[0]?.id || 'name'}`
+    const nameFieldId = form.case_name_field || form.questions[0]?.id || 'name'
+    base.open_case.name_update.question_path = resolveQuestionPath(form.questions || [], nameFieldId) || `/data/${nameFieldId}`
 
     // Update case properties (filtered)
     const updateMap = buildSafeUpdateMap(form.case_properties)
@@ -397,7 +435,8 @@ function buildFormActions(form: CompactForm, caseType: string): any {
       const preloadMap: Record<string, string> = {}
       for (const [questionId, caseProp] of Object.entries(form.case_preload)) {
         if (RESERVED_CASE_PROPERTIES.has(caseProp)) continue // HQ rejects reserved words in preloads
-        preloadMap[`/data/${questionId}`] = caseProp
+        const qPath = resolveQuestionPath(form.questions || [], questionId) || `/data/${questionId}`
+        preloadMap[qPath] = caseProp
       }
       if (Object.keys(preloadMap).length > 0) {
         base.case_preload.condition = { ...alwaysCondition }
@@ -408,19 +447,21 @@ function buildFormActions(form: CompactForm, caseType: string): any {
 
   // Close case (followup forms only)
   if (form.type === 'followup' && form.close_case) {
-    if (form.close_case === true) {
-      base.close_case = { doc_type: 'FormAction', condition: { ...alwaysCondition } }
-    } else if (typeof form.close_case === 'object' && form.close_case.question && form.close_case.answer) {
+    if (form.close_case.question && form.close_case.answer) {
+      // Conditional close
       base.close_case = {
         doc_type: 'FormAction',
         condition: {
           type: 'if',
-          question: `/data/${form.close_case.question}`,
+          question: resolveQuestionPath(form.questions || [], form.close_case.question) || `/data/${form.close_case.question}`,
           answer: form.close_case.answer,
           operator: '=',
           doc_type: 'FormActionCondition'
         }
       }
+    } else {
+      // Unconditional close
+      base.close_case = { doc_type: 'FormAction', condition: { ...alwaysCondition } }
     }
   }
 
@@ -431,16 +472,12 @@ function buildFormActions(form: CompactForm, caseType: string): any {
       if (child.case_properties) {
         for (const [caseProp, questionId] of Object.entries(child.case_properties)) {
           if (RESERVED_CASE_PROPERTIES.has(caseProp)) continue
-          const basePath = child.repeat_context
-            ? `/data/${child.repeat_context}/${questionId}`
-            : `/data/${questionId}`
-          childProps[caseProp] = { question_path: basePath, update_mode: 'always' }
+          const qPath = resolveQuestionPath(form.questions || [], questionId) || `/data/${questionId}`
+          childProps[caseProp] = { question_path: qPath, update_mode: 'always' }
         }
       }
 
-      const nameFieldPath = child.repeat_context
-        ? `/data/${child.repeat_context}/${child.case_name_field}`
-        : `/data/${child.case_name_field}`
+      const nameFieldPath = resolveQuestionPath(form.questions || [], child.case_name_field) || `/data/${child.case_name_field}`
 
       return {
         doc_type: 'OpenSubCaseAction',
@@ -448,7 +485,7 @@ function buildFormActions(form: CompactForm, caseType: string): any {
         name_update: { question_path: nameFieldPath, update_mode: 'always' },
         reference_id: '',
         case_properties: childProps,
-        repeat_context: child.repeat_context ? `/data/${child.repeat_context}` : '',
+        repeat_context: child.repeat_context ? resolveQuestionPath(form.questions || [], child.repeat_context) || `/data/${child.repeat_context}` : '',
         relationship: child.relationship || 'child',
         close_condition: { ...neverCondition },
         condition: { ...alwaysCondition }
@@ -459,8 +496,8 @@ function buildFormActions(form: CompactForm, caseType: string): any {
   return base
 }
 
+/** Build the HQ DetailPair for case list/detail views from blueprint columns. */
 function buildCaseDetails(columns: { field: string; header: string }[]): any {
-  // Filter out reserved words from case list columns too
   const safeColumns = columns.filter(col => !RESERVED_CASE_PROPERTIES.has(col.field))
 
   const shortColumns = safeColumns.map(col => ({
@@ -519,6 +556,7 @@ function buildCaseDetails(columns: { field: string; header: string }[]): any {
   }
 }
 
+/** Build an empty DetailPair for survey-only modules (no case list). */
 function buildEmptyCaseDetails(): any {
   const detailBase = {
     sort_elements: [], tabs: [], filter: null,
@@ -540,17 +578,20 @@ function buildEmptyCaseDetails(): any {
 }
 
 /**
- * Validate the compact format before expanding.
- * Returns a list of errors (empty = valid).
+ * Validate an AppBlueprint's cross-field semantic rules before expanding.
+ *
+ * Structural checks (app_name, module/form/question names, types) are handled
+ * by the Zod schema at the MCP/tool boundary. This function catches semantic
+ * issues like missing case_type on case modules, reserved property names,
+ * dangling question references, etc.
+ *
+ * @returns Array of human-readable error strings (empty = valid)
  */
-export function validateCompact(compact: CompactApp): string[] {
+export function validateBlueprint(blueprint: AppBlueprint): string[] {
   const errors: string[] = []
 
-  // Structural checks (app_name, module/form/question names, types) are handled
-  // by the Zod schema — only cross-field semantic validations remain here.
-
-  for (let mIdx = 0; mIdx < compact.modules.length; mIdx++) {
-    const mod = compact.modules[mIdx]
+  for (let mIdx = 0; mIdx < blueprint.modules.length; mIdx++) {
+    const mod = blueprint.modules[mIdx]
 
     const hasCaseForms = mod.forms?.some(f => f.type !== 'survey')
     if (hasCaseForms && !mod.case_type) {
@@ -567,7 +608,7 @@ export function validateCompact(compact: CompactApp): string[] {
       }
 
       // Validate select questions have options (recursively for group/repeat children)
-      function validateQuestions(questions: CompactQuestion[], formName: string) {
+      function validateQuestions(questions: BlueprintQuestion[], formName: string) {
         for (const q of questions) {
           if ((q.type === 'select1' || q.type === 'select') && (!q.options || q.options.length === 0)) {
             errors.push(`Question "${q.id}" in "${formName}" is a select but has no options`)
@@ -580,7 +621,7 @@ export function validateCompact(compact: CompactApp): string[] {
       validateQuestions(form.questions || [], form.name)
 
       // Collect all question IDs including those inside groups/repeats
-      function collectQuestionIds(questions: CompactQuestion[]): string[] {
+      function collectQuestionIds(questions: BlueprintQuestion[]): string[] {
         const ids: string[] = []
         for (const q of questions) {
           ids.push(q.id)
@@ -592,7 +633,7 @@ export function validateCompact(compact: CompactApp): string[] {
       }
 
       // Find a question by id (recursively searching groups/repeats)
-      function findQuestionById(questions: CompactQuestion[], id: string): CompactQuestion | undefined {
+      function findQuestionById(questions: BlueprintQuestion[], id: string): BlueprintQuestion | undefined {
         for (const q of questions) {
           if (q.id === id) return q
           if ((q.type === 'group' || q.type === 'repeat') && q.children) {
@@ -653,18 +694,18 @@ export function validateCompact(compact: CompactApp): string[] {
         if (form.type !== 'followup') {
           errors.push(`"${form.name}" has close_case but is not a followup form — only followup forms can close cases`)
         }
-        if (typeof form.close_case === 'object') {
-          const cc = form.close_case as { question: string; answer: string }
-          if (!cc.question) {
-            errors.push(`"${form.name}" close_case condition is missing "question"`)
-          } else {
-            const questionIds = collectQuestionIds(form.questions || [])
-            if (!questionIds.includes(cc.question)) {
-              errors.push(`"${form.name}" close_case references question "${cc.question}" which doesn't exist`)
-            }
-          }
-          if (!cc.answer) {
-            errors.push(`"${form.name}" close_case condition is missing "answer"`)
+        const cc = form.close_case
+        // If one of question/answer is set, both must be
+        if (cc.question && !cc.answer) {
+          errors.push(`"${form.name}" close_case condition is missing "answer"`)
+        }
+        if (!cc.question && cc.answer) {
+          errors.push(`"${form.name}" close_case condition is missing "question"`)
+        }
+        if (cc.question) {
+          const questionIds = collectQuestionIds(form.questions || [])
+          if (!questionIds.includes(cc.question)) {
+            errors.push(`"${form.name}" close_case references question "${cc.question}" which doesn't exist`)
           }
         }
       }

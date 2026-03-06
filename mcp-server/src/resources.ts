@@ -34,9 +34,9 @@ export function getResources(): McpResource[] {
       mimeType: 'text/markdown'
     },
     {
-      uri: 'commcare://compact-schema',
-      name: 'CommCare Compact JSON Schema',
-      description: 'Specification for the compact JSON format used to define CommCare applications',
+      uri: 'commcare://blueprint-schema',
+      name: 'CommCare App Blueprint Schema',
+      description: 'Specification for the app blueprint format used to define CommCare applications',
       mimeType: 'text/markdown'
     }
   ]
@@ -46,8 +46,8 @@ export function readResource(uri: string): string {
   switch (uri) {
     case 'commcare://reference':
       return readFileSync(resolve(REPO_ROOT, 'docs', 'commcare-reference.md'), 'utf-8')
-    case 'commcare://compact-schema':
-      return readFileSync(resolve(REPO_ROOT, 'docs', 'compact-json-schema.md'), 'utf-8')
+    case 'commcare://blueprint-schema':
+      return readFileSync(resolve(REPO_ROOT, 'docs', 'blueprint-schema.md'), 'utf-8')
     default:
       throw new Error(`Unknown resource URI: ${uri}`)
   }
