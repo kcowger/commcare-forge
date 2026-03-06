@@ -50,38 +50,9 @@ describe('validate_commcare_app', () => {
     expect(result.errors!.some(e => e.includes('case_type'))).toBe(true)
   })
 
-  it('returns errors for missing app_name', async () => {
-    const result = await handleValidate({
-      compact_json: {
-        app_name: '',
-        modules: [{
-          name: 'Mod',
-          case_type: 'patient',
-          forms: [{
-            name: 'Register',
-            type: 'registration',
-            case_name_field: 'name',
-            questions: [
-              { id: 'name', type: 'text', label: 'Name' }
-            ]
-          }]
-        }]
-      }
-    })
-    expect(result.valid).toBe(false)
-    expect(result.errors!.some(e => e.includes('app_name'))).toBe(true)
-  })
-
-  it('returns errors for empty modules', async () => {
-    const result = await handleValidate({
-      compact_json: {
-        app_name: 'Test App',
-        modules: []
-      }
-    })
-    expect(result.valid).toBe(false)
-    expect(result.errors!.some(e => e.includes('No modules'))).toBe(true)
-  })
+  // Missing app_name and empty modules are now caught by the Zod schema
+  // at the MCP/tool boundary before handleValidate runs.
+  // See tests/schemas/compactApp.test.ts for those validations.
 
   it('returns errors for reserved property names in case_properties', async () => {
     const result = await handleValidate({
@@ -271,13 +242,22 @@ describe('build_commcare_app', () => {
     expect(existsSync(result.hq_json_path!)).toBe(true)
   })
 
-  it('returns errors for invalid compact JSON (empty app_name and modules)', async () => {
+  it('returns errors for compact JSON with semantic validation issues', async () => {
     const result = await handleBuild({
       compact_json: {
-        app_name: '',
-        modules: []
+        app_name: 'Test App',
+        modules: [{
+          name: 'Mod',
+          forms: [{
+            name: 'Register',
+            type: 'registration',
+            case_name_field: 'name',
+            questions: [{ id: 'name', type: 'text', label: 'Name' }]
+          }]
+        }]
       }
     })
+    // Missing case_type on module with registration form
     expect(result.success).toBe(false)
     expect(result.errors!.length).toBeGreaterThan(0)
   })
