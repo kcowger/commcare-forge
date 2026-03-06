@@ -18,6 +18,7 @@ export class ClaudeService {
   async sendMessage(message: string, attachments?: FileAttachment[]): Promise<string> {
     const userContent = await this.buildUserContent(message, attachments)
     this.conversationHistory.push({ role: 'user', content: userContent })
+    await this.estimateAndTrimIfNeeded()
 
     const response = await this.client.messages.create({
       model: this.model,
@@ -43,6 +44,7 @@ export class ClaudeService {
   ): Promise<string> {
     const userContent = await this.buildUserContent(message, attachments)
     this.conversationHistory.push({ role: 'user', content: userContent })
+    await this.estimateAndTrimIfNeeded()
 
     const stream = this.client.messages.stream({
       model: this.model,
@@ -133,6 +135,16 @@ export class ClaudeService {
       } else if (attachment.type === 'application/pdf') {
         // Split large PDFs into ≤100 page chunks (API limit)
         const pdfChunks = await this.splitPdfIfNeeded(attachment.data)
+        const MAX_CHUNKS = 3 // Cap at 300 pages per request
+        if (pdfChunks.length > MAX_CHUNKS) {
+          content.push({
+            type: 'text',
+            text: `[Note: ${attachment.name} has approximately ${pdfChunks.length * 100}+ pages. ` +
+                  `Only the first ${MAX_CHUNKS * 100} pages are included. ` +
+                  `Please upload remaining pages separately if needed.]`
+          })
+          pdfChunks.splice(MAX_CHUNKS)
+        }
         for (let i = 0; i < pdfChunks.length; i++) {
           if (pdfChunks.length > 1) {
             content.push({
@@ -209,6 +221,64 @@ export class ClaudeService {
     return content
   }
 
+  /** Check token count and trim conversation history if needed before sending to API. */
+  private async estimateAndTrimIfNeeded(): Promise<void> {
+    const TOKEN_LIMIT = 190_000 // leave headroom for response
+    const MAX_TRIM_ATTEMPTS = 10
+
+    for (let attempt = 0; attempt < MAX_TRIM_ATTEMPTS; attempt++) {
+      try {
+        const result = await this.client.messages.countTokens({
+          model: this.model,
+          system: SYSTEM_PROMPT,
+          messages: this.conversationHistory
+        })
+
+        if (result.input_tokens <= TOKEN_LIMIT) return
+
+        // If only the current message exists, the attachments themselves are too large
+        if (this.conversationHistory.length <= 1) {
+          throw new Error(
+            `The attached files are too large for a single request ` +
+            `(${result.input_tokens.toLocaleString()} tokens, limit is ${TOKEN_LIMIT.toLocaleString()}). ` +
+            `Try sending fewer or smaller files.`
+          )
+        }
+
+        // Try stripping binary content from old messages first, then remove old messages
+        const stripped = this.stripOldBinaryContent()
+        if (!stripped) {
+          // No more binary content to strip — remove oldest user+assistant pair
+          this.conversationHistory.splice(0, 2)
+        }
+      } catch (err: any) {
+        if (err.message?.includes('too large')) throw err
+        // countTokens API failed — let the main API call handle it
+        console.warn('Token counting failed, proceeding without trim:', err)
+        return
+      }
+    }
+  }
+
+  /** Replace the oldest base64 image/document block in history with a text placeholder. */
+  private stripOldBinaryContent(): boolean {
+    for (const msg of this.conversationHistory) {
+      if (!Array.isArray(msg.content)) continue
+      for (let i = 0; i < msg.content.length; i++) {
+        const block = msg.content[i]
+        if (block.type === 'image' && block.source?.type === 'base64') {
+          msg.content[i] = { type: 'text', text: '[Previously uploaded image — removed to save space]' }
+          return true
+        }
+        if (block.type === 'document' && block.source?.type === 'base64') {
+          msg.content[i] = { type: 'text', text: '[Previously uploaded PDF — removed to save space]' }
+          return true
+        }
+      }
+    }
+    return false
+  }
+
   /** Split a PDF into ≤100 page chunks. Returns array of base64 strings. */
   private async splitPdfIfNeeded(base64Data: string): Promise<string[]> {
     const MAX_PAGES = 100
@@ -237,7 +307,17 @@ export class ClaudeService {
 
       return chunks
     } catch (err) {
-      console.warn('Failed to split PDF, sending as-is:', err)
+      // If we can't parse the PDF, check size to decide whether it's safe to send unsplit
+      const pdfBytes = Buffer.from(base64Data, 'base64')
+      const sizeMB = pdfBytes.length / (1024 * 1024)
+      if (sizeMB > 10) {
+        throw new Error(
+          `This PDF is too large (${sizeMB.toFixed(0)}MB) and could not be processed for splitting. ` +
+          `Try re-saving the PDF without encryption or DRM, or split it into smaller files manually.`
+        )
+      }
+      // Small PDF — likely under 100 pages, safe to send as-is
+      console.warn('Could not parse PDF for splitting, but file is small enough to send as-is:', err)
       return [base64Data]
     }
   }
