@@ -19,7 +19,7 @@
     "build:mcp": "cd mcp-server && npm run build"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.39.0",
+    "@anthropic-ai/sdk": "^0.78.0",
     "adm-zip": "^0.5.16",
     "electron-store": "^8.2.0",
     "electron-updater": "^6.8.3",

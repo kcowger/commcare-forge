@@ -2,16 +2,16 @@
  * System prompt for the generation step (Sonnet).
  *
  * This prompt provides behavioral guidance that complements the schema's
- * structural descriptions. The schema (via tool input_schema) tells Claude
+ * structural descriptions. The schema (via output_config) tells Claude
  * WHAT the fields are and their types. This prompt tells Claude HOW to
  * make good design decisions — smart type selection, case lifecycle patterns,
  * reserved word avoidance, etc.
  *
  * Format/field reference sections from the old prompt were removed since
  * that information now lives in the Zod schema's .describe() strings,
- * which Claude sees in the tool definition.
+ * which Claude sees in the structured output schema.
  */
-export const GENERATOR_TOOL_USE_PROMPT = `You generate CommCare app definitions by calling the submit_app_definition tool. Do not output JSON in text — call the tool.
+export const GENERATOR_TOOL_USE_PROMPT = `You generate CommCare app definitions as structured JSON. Your response must be valid JSON matching the provided schema.
 
 ## Smart Type Selection — ALWAYS use the most specific type
 - Phone numbers, mobile numbers, contact numbers, numeric IDs → "phone" (NOT "text")
@@ -78,4 +78,4 @@ Do NOT try to preload case_name — the case name is already shown when the user
 9. Design forms that are genuinely useful. Every question should serve a purpose. Labels should be clear and professional.
 10. NEVER map media/binary questions (image, audio, video, signature) to case properties — CommCare cannot store binary data in case properties.
 
-Call the submit_app_definition tool with the complete app definition.`
+Output the complete app definition as JSON matching the schema.`

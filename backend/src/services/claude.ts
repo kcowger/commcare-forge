@@ -1,22 +1,23 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
 import { PDFDocument } from 'pdf-lib'
 import mammoth from 'mammoth'
 import * as XLSX from 'xlsx'
 import { SYSTEM_PROMPT } from '../prompts/system'
 import type { FileAttachment, ConversationMessage } from '../types'
+import type { z } from 'zod'
 
 /**
  * Wrapper around the Anthropic SDK that manages conversation history and
  * provides convenience methods for the different ways we talk to Claude:
  *
  * - `sendMessage` / `streamMessage` — multi-turn conversation (chat UI)
- * - `sendOneShot` — single-turn text generation (no tool use)
- * - `sendOneShotWithTool` — single-turn with forced tool use for structured output
+ * - `sendOneShot` — single-turn text generation
+ * - `sendOneShotStructured` — single-turn with structured JSON output via output_config
  *
  * The Electron app creates one instance per conversation. The app generator
- * uses `sendOneShotWithTool` for both initial generation and fix attempts,
- * which guarantees Claude returns valid JSON matching the tool's input_schema
- * instead of freeform text that needs regex parsing.
+ * uses `sendOneShotStructured` for both initial generation and fix attempts,
+ * which guarantees Claude returns valid JSON matching the Zod schema.
  */
 export class ClaudeService {
   private client: Anthropic
@@ -104,57 +105,48 @@ export class ClaudeService {
   }
 
   /**
-   * Single-turn request that forces Claude to respond by calling a specific tool,
-   * guaranteeing structured JSON output matching the tool's input_schema.
+   * Single-turn request with structured JSON output using Anthropic's output_config.
    *
-   * This replaces the old pattern of sendOneShot() + regex-parsing JSON from
-   * markdown code blocks. With `tool_choice: { type: 'tool', name }`, Claude
-   * MUST call the named tool — it can't respond with plain text instead.
+   * Uses `zodOutputFormat()` to pass the Zod schema directly to the API, which
+   * constrains Claude's response to valid JSON matching the schema. The SDK's
+   * `messages.stream()` with output_config emits `text` events with JSON fragments.
    *
-   * The `onChunk` callback fires with `inputJson` deltas (partial JSON fragments)
-   * as they stream in. The UI doesn't display these directly (it shows a spinner),
-   * but the callback keeps the progress reporting alive.
-   *
-   * @param tool - The tool definition with a JSON Schema input_schema (from getCompactAppJsonSchema())
-   * @returns The parsed tool input, typed as T (e.g. CompactApp)
+   * @param schema - A Zod schema defining the expected output structure
+   * @param onChunk - Optional callback for streaming progress (receives text deltas)
+   * @returns The parsed output, typed as the Zod schema's inferred type
    */
-  async sendOneShotWithTool<T>(
+  async sendOneShotStructured<S extends z.ZodType>(
     systemPrompt: string,
     message: string,
-    tool: { name: string; description: string; input_schema: Record<string, unknown> },
+    schema: S,
     onChunk?: (chunk: string) => void,
     options?: { model?: string; maxTokens?: number }
-  ): Promise<T> {
+  ): Promise<z.infer<S>> {
     const stream = this.client.messages.stream({
       model: options?.model || this.model,
       max_tokens: options?.maxTokens || 16384,
       system: systemPrompt,
       messages: [{ role: 'user', content: message }],
-      tools: [{
-        name: tool.name,
-        description: tool.description,
-        input_schema: tool.input_schema as Anthropic.Tool['input_schema']
-      }],
-      // Force Claude to call this specific tool — no text-only responses allowed
-      tool_choice: { type: 'tool', name: tool.name }
+      output_config: {
+        format: zodOutputFormat(schema),
+      },
     })
 
-    // inputJson fires with each JSON fragment as the tool input streams in
-    stream.on('inputJson', (delta: string, _snapshot: unknown) => {
-      if (onChunk) onChunk(delta)
+    stream.on('text', (text: string) => {
+      if (onChunk) onChunk(text)
     })
 
     const finalMessage = await stream.finalMessage()
 
-    const toolUse = finalMessage.content.find(
-      (block): block is Anthropic.ToolUseBlock => block.type === 'tool_use'
+    const textBlock = finalMessage.content.find(
+      (block): block is Anthropic.TextBlock => block.type === 'text'
     )
 
-    if (!toolUse) {
-      throw new Error('Claude did not return a tool_use block')
+    if (!textBlock) {
+      throw new Error('Claude did not return a text block')
     }
 
-    return toolUse.input as T
+    return JSON.parse(textBlock.text)
   }
 
   getConversationSummary(): string {

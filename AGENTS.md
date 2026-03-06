@@ -15,9 +15,9 @@ CommCare Forge is a desktop app (Electron) that generates CommCare mobile applic
 ### Generation Pipeline
 
 1. User describes app via chat (with optional file uploads: PDF, DOCX, XLSX, images)
-2. Claude generates a **compact JSON** app definition via forced tool use (structured output matching the Zod schema)
+2. Claude generates a **compact JSON** app definition via Anthropic's structured output API (`output_config` with the Zod schema)
 3. `hqJsonExpander.ts` expands compact JSON into full HQ-compatible JSON (XForms, suite.xml, profile.xml, etc.)
-4. `validateCompact()` checks semantic rules; if errors are found, Claude (Haiku) fixes them via tool use
+4. `validateCompact()` checks semantic rules; if errors are found, Claude (Haiku) fixes them via structured output
 5. Fix loop repeats until validation passes or stuck detection triggers
 6. Final HQ JSON is exported for import
 
@@ -31,9 +31,9 @@ The compact format is key: Claude only outputs the variable parts (~2-5KB), and 
 | `electron/preload.ts` | IPC bridge (contextBridge) |
 | `electron/ipc-handlers.ts` | All IPC handlers |
 | `backend/src/schemas/compactApp.ts` | Zod schema for compact JSON — single source of truth for structure, types, and LLM tool definitions |
-| `backend/src/services/appGenerator.ts` | Generation orchestrator + fix loop (uses forced tool use for structured output) |
+| `backend/src/services/appGenerator.ts` | Generation orchestrator + fix loop (uses structured output via output_config) |
 | `backend/src/services/hqJsonExpander.ts` | Compact JSON → full HQ JSON expansion + semantic validation |
-| `backend/src/services/claude.ts` | Anthropic API client (streaming, file attachments, PDF splitting, tool use) |
+| `backend/src/services/claude.ts` | Anthropic API client (streaming, file attachments, PDF splitting, structured output) |
 | `backend/src/services/appExporter.ts` | Exports HQ JSON and CCZ files |
 | `backend/src/services/cczCompiler.ts` | Compiles HQ JSON into .ccz (ZIP) |
 | `backend/src/services/hqValidator.ts` | Validates HQ JSON against known HQ rules |
@@ -55,7 +55,7 @@ npm run dist    # Create platform installers
 ## Key Patterns
 
 - **Compact format**: Claude outputs a small JSON with just app structure (modules, forms, questions, case properties). The expander adds all XForm XML, suite.xml, binds, itext, etc. This is critical for reliability.
-- **Structured output via tool use**: Generation and fixing use `tool_choice` to force Claude to return structured JSON matching the Zod schema, eliminating the need for text parsing or JSON repair.
+- **Structured output**: Generation and fixing use Anthropic's `output_config` API with `zodOutputFormat()` to constrain Claude's response to valid JSON matching the Zod schema. No text parsing or JSON repair needed.
 - **Zod as single source of truth**: The compact JSON structure is defined once in the Zod schema (`backend/src/schemas/compactApp.ts`). TypeScript types are derived via `z.infer`. The schema's `.describe()` strings serve as LLM guidance in tool definitions.
 - **Reserved case properties**: HQ rejects a specific set of reserved words in `case_properties` keys AND `case_preload` values. The expander silently filters them; the validator catches them for the fix loop.
 - **PDF splitting**: Claude API has a 100-page PDF limit. Large PDFs are automatically split into chunks using pdf-lib.

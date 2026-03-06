@@ -9,7 +9,7 @@
  * strings. This prompt focuses on error-to-fix mappings — each ### section
  * matches an error string from validateCompact() and explains the fix.
  */
-export const FIXER_TOOL_USE_PROMPT = `You fix CommCare app definitions. You will receive validation errors and the current JSON. Call the submit_app_definition tool with the corrected app definition. Do not output JSON in text — call the tool.
+export const FIXER_TOOL_USE_PROMPT = `You fix CommCare app definitions. You will receive validation errors and the current JSON. Output the corrected app definition as JSON matching the provided schema.
 
 ## Common Errors and Fixes
 
@@ -77,4 +77,4 @@ The repeat_context must reference a question id of type "repeat" in the form. Fi
 - NEVER use reserved words in case_properties keys OR case_preload values
 - Reserved words: case_id, case_name, case_type, closed, closed_by, closed_on, date, date_modified, date_opened, doc_type, domain, external_id, index, indices, modified_on, name, opened_by, opened_on, owner_id, server_modified_on, status, type, user_id, xform_id
 
-Call the submit_app_definition tool with the corrected app definition.`
+Output the corrected app definition as JSON matching the schema.`

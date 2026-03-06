@@ -1,15 +1,15 @@
 /**
  * Orchestrates the full app generation pipeline:
  *
- *   1. Ask Claude to generate a compact JSON app definition (via tool use)
+ *   1. Ask Claude to generate a compact JSON app definition (structured output)
  *   2. Validate the compact JSON against CommCare rules
  *   3. If validation fails, ask Claude (Haiku) to fix errors — loop until clean or stuck
  *   4. Expand compact JSON into full HQ import JSON (with XForm XML, suite.xml, etc.)
  *   5. Export the HQ JSON and compile it into a .ccz file
  *
- * Both generation (step 1) and fixing (step 3) use `sendOneShotWithTool` to force
- * structured output. This eliminates the old regex-based JSON extraction from
- * markdown code blocks and the truncated-JSON repair logic that came with it.
+ * Both generation (step 1) and fixing (step 3) use `sendOneShotStructured` with
+ * the Zod schema via Anthropic's output_config API. This constrains Claude's
+ * response to valid JSON matching the schema — no parsing or repair needed.
  */
 import type { AppDefinition, GenerationProgress } from '../types'
 import { ClaudeService } from './claude'
@@ -18,22 +18,9 @@ import { AppExporter } from './appExporter'
 import { BuildLogger } from './buildLogger'
 import { GENERATOR_TOOL_USE_PROMPT } from '../prompts/generatorToolUse'
 import { FIXER_TOOL_USE_PROMPT } from '../prompts/fixerToolUse'
-import { getCompactAppJsonSchema } from '../schemas/compactApp'
+import { compactAppSchema } from '../schemas/compactApp'
 import { expandToHqJson, validateCompact } from './hqJsonExpander'
 import type { CompactApp } from '../schemas/compactApp'
-
-/**
- * Tool definition passed to Claude's API via sendOneShotWithTool().
- * The input_schema is the full JSON Schema generated from our Zod schema,
- * so Claude sees every field, its type, and its description when deciding
- * what to output. `tool_choice` forces Claude to call this tool rather
- * than responding with plain text.
- */
-const SUBMIT_TOOL = {
-  name: 'submit_app_definition',
-  description: 'Submit the complete CommCare app definition in compact JSON format.',
-  input_schema: getCompactAppJsonSchema() as Record<string, unknown>
-}
 
 export class AppGenerator {
   private claudeService: ClaudeService
@@ -84,8 +71,8 @@ export class AppGenerator {
 
     let compact: CompactApp
     try {
-      compact = await this.claudeService.sendOneShotWithTool<CompactApp>(
-        GENERATOR_TOOL_USE_PROMPT, message, SUBMIT_TOOL,
+      compact = await this.claudeService.sendOneShotStructured(
+        GENERATOR_TOOL_USE_PROMPT, message, compactAppSchema,
         () => { /* streaming progress — UI shows spinner */ },
         { maxTokens: 64000 }
       )
@@ -173,8 +160,8 @@ export class AppGenerator {
 
       let fixedCompact: CompactApp
       try {
-        fixedCompact = await this.claudeService.sendOneShotWithTool<CompactApp>(
-          FIXER_TOOL_USE_PROMPT, fixMessage, SUBMIT_TOOL,
+        fixedCompact = await this.claudeService.sendOneShotStructured(
+          FIXER_TOOL_USE_PROMPT, fixMessage, compactAppSchema,
           () => { /* streaming progress */ },
           { model: 'claude-haiku-4-5-20251001', maxTokens: 32768 }
         )

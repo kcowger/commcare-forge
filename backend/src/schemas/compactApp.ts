@@ -2,15 +2,17 @@
  * Shared Zod schema for the compact JSON app format.
  *
  * This is the single source of truth for the structure LLMs must produce when
- * generating CommCare apps. It serves two consumers:
+ * generating CommCare apps. It serves three consumers:
  *
- * 1. **MCP server** — the Zod schema is passed directly to `server.tool()` so
+ * 1. **Electron app backend** — the Zod schema is passed directly to
+ *    `sendOneShotStructured()` via Anthropic's `output_config` API with
+ *    `zodOutputFormat()`, constraining Claude's response to valid JSON.
+ *
+ * 2. **MCP server** — the Zod schema is passed directly to `server.tool()` so
  *    that MCP-connected LLMs see full field-level descriptions in the tool schema.
  *
- * 2. **Electron app backend** — `getCompactAppJsonSchema()` converts this to a
- *    plain JSON Schema object, which is passed as an Anthropic tool definition
- *    via `sendOneShotWithTool()`. This forces Claude to return structured output
- *    instead of freeform text with embedded JSON.
+ * 3. **Non-Zod consumers** — `getCompactAppJsonSchema()` converts to plain JSON
+ *    Schema for raw API tool definitions.
  *
  * The `.describe()` strings on each field double as LLM guidance — they explain
  * what each field does, what values are valid, and common pitfalls to avoid.
