@@ -608,27 +608,19 @@ function buildEmptyCaseDetails(): any {
 export function validateCompact(compact: CompactApp): string[] {
   const errors: string[] = []
 
-  if (!compact.app_name) {
-    errors.push('Missing app_name')
-  }
+  // Structural checks (app_name, module/form/question names, types) are handled
+  // by the Zod schema — only cross-field semantic validations remain here.
 
-  if (!compact.modules || compact.modules.length === 0) {
-    errors.push('No modules defined')
-  }
-
-  for (let mIdx = 0; mIdx < (compact.modules || []).length; mIdx++) {
+  for (let mIdx = 0; mIdx < compact.modules.length; mIdx++) {
     const mod = compact.modules[mIdx]
-    if (!mod.name) errors.push(`Module ${mIdx} has no name`)
 
     const hasCaseForms = mod.forms?.some(f => f.type !== 'survey')
     if (hasCaseForms && !mod.case_type) {
       errors.push(`"${mod.name}" has case forms but no case_type`)
     }
 
-    for (let fIdx = 0; fIdx < (mod.forms || []).length; fIdx++) {
+    for (let fIdx = 0; fIdx < mod.forms.length; fIdx++) {
       const form = mod.forms[fIdx]
-      if (!form.name) errors.push(`Module "${mod.name}" form ${fIdx} has no name`)
-      if (!form.type) errors.push(`"${form.name}" has no type (must be registration, followup, or survey)`)
       if (!form.questions || form.questions.length === 0) {
         errors.push(`"${form.name}" in "${mod.name}" has no questions`)
       }
@@ -636,12 +628,9 @@ export function validateCompact(compact: CompactApp): string[] {
         errors.push(`"${form.name}" is a registration form but has no case_name_field`)
       }
 
-      // Validate question ids (recursively for group/repeat children)
+      // Validate select questions have options (recursively for group/repeat children)
       function validateQuestions(questions: CompactQuestion[], formName: string) {
         for (const q of questions) {
-          if (!q.id) errors.push(`Question in "${formName}" has no id`)
-          if (!q.type) errors.push(`Question "${q.id}" in "${formName}" has no type`)
-          if (!q.label && q.type !== 'hidden') errors.push(`Question "${q.id}" in "${formName}" has no label`)
           if ((q.type === 'select1' || q.type === 'select') && (!q.options || q.options.length === 0)) {
             errors.push(`Question "${q.id}" in "${formName}" is a select but has no options`)
           }
@@ -774,9 +763,6 @@ export function validateCompact(compact: CompactApp): string[] {
             } else if (repeatQ.type !== 'repeat') {
               errors.push(`${prefix} repeat_context "${child.repeat_context}" is not a repeat group`)
             }
-          }
-          if (child.relationship && !['child', 'extension'].includes(child.relationship)) {
-            errors.push(`${prefix} relationship must be "child" or "extension"`)
           }
         }
       }

@@ -51,15 +51,8 @@ describe('validateCompact', () => {
     expect(errors).toEqual([])
   })
 
-  it('errors on missing app_name', () => {
-    const errors = validateCompact(minimalApp({ app_name: '' }))
-    expect(errors).toContainEqual(expect.stringContaining('app_name'))
-  })
-
-  it('errors on empty modules', () => {
-    const errors = validateCompact(minimalApp({ modules: [] }))
-    expect(errors).toContainEqual(expect.stringContaining('No modules'))
-  })
+  // Missing app_name, empty modules, missing question id/type are now caught
+  // by the Zod schema before validateCompact runs — see tests/schemas/compactApp.test.ts.
 
   it('errors when case forms exist but no case_type', () => {
     const app = minimalApp()
@@ -137,19 +130,6 @@ describe('validateCompact', () => {
     expect(errors).toContainEqual(expect.stringContaining('reserved'))
   })
 
-  it('errors on question with no id', () => {
-    const app = minimalApp()
-    app.modules[0].forms[0].questions.push({ id: '', type: 'text', label: 'No ID' })
-    const errors = validateCompact(app)
-    expect(errors).toContainEqual(expect.stringContaining('no id'))
-  })
-
-  it('errors on question with no type', () => {
-    const app = minimalApp()
-    app.modules[0].forms[0].questions.push({ id: 'q', type: '' as any, label: 'No type' })
-    const errors = validateCompact(app)
-    expect(errors).toContainEqual(expect.stringContaining('no type'))
-  })
 })
 
 // --- expandToHqJson ---
