@@ -138,15 +138,11 @@ export class ClaudeService {
 
     const finalMessage = await stream.finalMessage()
 
-    const textBlock = finalMessage.content.find(
-      (block): block is Anthropic.TextBlock => block.type === 'text'
-    )
-
-    if (!textBlock) {
-      throw new Error('Claude did not return a text block')
+    if (!finalMessage.parsed_output) {
+      throw new Error('Claude did not return parsed structured output')
     }
 
-    return JSON.parse(textBlock.text)
+    return finalMessage.parsed_output
   }
 
   getConversationSummary(): string {
