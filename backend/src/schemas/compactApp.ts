@@ -17,8 +17,8 @@
  * The behavioral rules (reserved words, type selection, case lifecycle) live in
  * the prompt files, not here, since they're too long for schema descriptions.
  *
- * The TypeScript interfaces this mirrors live in `hqJsonExpander.ts` (CompactApp,
- * CompactModule, CompactForm, CompactQuestion, CompactChildCase).
+ * TypeScript types (CompactApp, CompactModule, etc.) are derived from this
+ * schema via `z.infer` and exported at the bottom of this file.
  */
 import { z } from 'zod'
 
