@@ -15,7 +15,8 @@
     "download-cli": "bash scripts/download-cli.sh",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:integration": "echo 'Integration tests require Java 17+'"
+    "test:integration": "echo 'Integration tests require Java 17+'",
+    "build:mcp": "cd mcp-server && npm run build"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
