@@ -105,7 +105,7 @@ describe('validateCompact', () => {
     expect(errors).toContainEqual(expect.stringContaining("doesn't exist"))
   })
 
-  it('errors on reserved word in case_preload', () => {
+  it('allows reserved words as preload sources (reading FROM case)', () => {
     const app: CompactApp = {
       app_name: 'Test',
       modules: [{
@@ -114,13 +114,13 @@ describe('validateCompact', () => {
         forms: [{
           name: 'Followup',
           type: 'followup',
-          case_preload: { age: 'date' },
-          questions: [{ id: 'age', type: 'int', label: 'Age' }]
+          case_preload: { display_name: 'case_name' },
+          questions: [{ id: 'display_name', type: 'text', label: 'Name' }]
         }]
       }]
     }
     const errors = validateCompact(app)
-    expect(errors).toContainEqual(expect.stringContaining('reserved'))
+    expect(errors).toEqual([])
   })
 
   it('errors on reserved word in case_list_columns', () => {

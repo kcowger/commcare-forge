@@ -403,11 +403,12 @@ function buildFormActions(form: CompactForm, caseType: string): any {
       base.update_case.update = updateMap
     }
 
-    // Preload case data — filter reserved words (HQ rejects them in preloads too)
+    // Preload case data into form questions
+    // Note: preload values are case properties being READ FROM, not saved TO.
+    // Reserved words like case_name are valid preload sources (e.g. displaying the case name).
     if (form.case_preload && Object.keys(form.case_preload).length > 0) {
       const preloadMap: Record<string, string> = {}
       for (const [questionId, caseProp] of Object.entries(form.case_preload)) {
-        if (RESERVED_CASE_PROPERTIES.has(caseProp)) continue // HQ rejects reserved words in preloads
         preloadMap[resolveQuestionPath(questionId)] = caseProp
       }
       if (Object.keys(preloadMap).length > 0) {
@@ -641,15 +642,14 @@ export function validateCompact(compact: CompactApp): string[] {
         }
       }
 
-      // Check case_preload keys refer to valid question ids and values aren't reserved
+      // Check case_preload keys refer to valid question ids
+      // Note: preload values are case properties being READ FROM — reserved words
+      // like case_name are valid preload sources (e.g. displaying the case name).
       if (form.case_preload) {
         const questionIds = collectQuestionIds(form.questions || [])
-        for (const [qId, caseProp] of Object.entries(form.case_preload)) {
+        for (const [qId] of Object.entries(form.case_preload)) {
           if (!questionIds.includes(qId)) {
             errors.push(`"${form.name}" case_preload references question "${qId}" which doesn't exist`)
-          }
-          if (RESERVED_CASE_PROPERTIES.has(caseProp)) {
-            errors.push(`"${form.name}" case_preload uses reserved property "${caseProp}" — use a custom property name instead`)
           }
         }
       }
