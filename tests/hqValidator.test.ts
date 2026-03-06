@@ -142,6 +142,76 @@ describe('HqValidator case checks', () => {
   })
 })
 
+// --- Case path consistency ---
+
+describe('HqValidator case path consistency', () => {
+  it('passes when case update calculate paths match real bind nodesets', () => {
+    const xform = makeXForm(
+      `    <input ref="/data/name">\n      <label ref="jr:itext('name-label')"/>\n    </input>`,
+      {
+        instance: '<name/><case><create><case_type/><case_name/><owner_id/></create><update><patient_name/></update></case>',
+        binds: [
+          '<bind nodeset="/data/name" type="xsd:string"/>',
+          '<bind nodeset="/data/case/create/case_type" calculate="\'patient\'"/>',
+          '<bind nodeset="/data/case/create/case_name" calculate="/data/name"/>',
+          '<bind nodeset="/data/case/create/owner_id" calculate="instance(\'commcaresession\')/session/context/userid"/>',
+          '<bind nodeset="/data/case/update/patient_name" calculate="/data/name"/>'
+        ].join('\n      ')
+      }
+    )
+    const result = validator.validate({ 'modules-0/forms-0.xml': xform })
+    expect(result.errors).toEqual([])
+  })
+
+  it('errors when case update calculate references a non-existent path', () => {
+    const xform = makeXForm(
+      `    <input ref="/data/info_group/name">\n      <label ref="jr:itext('name-label')"/>\n    </input>`,
+      {
+        instance: '<info_group><name/></info_group><case><update><patient_name/></update></case>',
+        binds: [
+          '<bind nodeset="/data/info_group/name" type="xsd:string"/>',
+          '<bind nodeset="/data/case/update/patient_name" calculate="/data/name"/>'
+        ].join('\n      ')
+      }
+    )
+    const result = validator.validate({ 'modules-0/forms-0.xml': xform })
+    expect(result.errors).toContainEqual(expect.stringContaining('patient_name'))
+    expect(result.errors).toContainEqual(expect.stringContaining('/data/name'))
+  })
+
+  it('passes when case update correctly references grouped question path', () => {
+    const xform = makeXForm(
+      `    <input ref="/data/info_group/name">\n      <label ref="jr:itext('name-label')"/>\n    </input>`,
+      {
+        instance: '<info_group><name/></info_group><case><update><patient_name/></update></case>',
+        binds: [
+          '<bind nodeset="/data/info_group/name" type="xsd:string"/>',
+          '<bind nodeset="/data/case/update/patient_name" calculate="/data/info_group/name"/>'
+        ].join('\n      ')
+      }
+    )
+    const result = validator.validate({ 'modules-0/forms-0.xml': xform })
+    expect(result.errors).toEqual([])
+  })
+
+  it('ignores literal calculate values in case create binds', () => {
+    const xform = makeXForm(
+      `    <input ref="/data/name">\n      <label ref="jr:itext('name-label')"/>\n    </input>`,
+      {
+        instance: '<name/><case><create><case_type/><case_name/><owner_id/></create></case>',
+        binds: [
+          '<bind nodeset="/data/name" type="xsd:string"/>',
+          '<bind nodeset="/data/case/create/case_type" calculate="\'patient\'"/>',
+          '<bind nodeset="/data/case/create/case_name" calculate="/data/name"/>',
+          '<bind nodeset="/data/case/create/owner_id" calculate="instance(\'commcaresession\')/session/context/userid"/>'
+        ].join('\n      ')
+      }
+    )
+    const result = validator.validate({ 'modules-0/forms-0.xml': xform })
+    expect(result.errors).toEqual([])
+  })
+})
+
 // --- Cross-file validation ---
 
 describe('HqValidator cross-file checks', () => {

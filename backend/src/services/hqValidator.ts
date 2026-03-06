@@ -103,6 +103,11 @@ export class HqValidator {
     const bindErrors = this.checkBinds(filePath, content)
     errors.push(...bindErrors)
 
+    // H. Case management path consistency — verify case update/preload/create calculate
+    // expressions reference question paths that actually exist as bind nodesets
+    const pathErrors = this.checkCasePathConsistency(filePath, content)
+    errors.push(...pathErrors)
+
     return errors
   }
 
@@ -407,6 +412,57 @@ export class HqValidator {
         errors.push(`Bind references "${nodeset}" but <${leafNode}> not found in instance data in ${filePath}.`)
       }
     }
+
+    return errors
+  }
+
+  // --- Case management path consistency ---
+
+  /**
+   * Verify that case management calculate expressions reference question paths
+   * that actually exist as bind nodesets in the XForm. Catches mismatches caused
+   * by questions inside groups (e.g. calculate="/data/q" when the real path is
+   * "/data/group/q").
+   */
+  private checkCasePathConsistency(filePath: string, content: string): string[] {
+    const errors: string[] = []
+
+    // Collect all bind nodesets (the set of valid paths in this form)
+    const validPaths = new Set<string>()
+    const bindNodesets = content.matchAll(/nodeset="([^"]+)"/g)
+    for (const m of bindNodesets) {
+      validPaths.add(m[1])
+    }
+
+    // Find all case-related binds whose calculate references a /data/ form path
+    // These are binds like: nodeset="/data/case/update/prop" calculate="/data/some_question"
+    // or: nodeset="/data/case/create/case_name" calculate="/data/some_question"
+    const caseBinds = content.matchAll(
+      /nodeset="(\/data\/case\/(?:update|create)\/[^"]+)"\s+calculate="([^"]+)"/g
+    )
+    for (const m of caseBinds) {
+      const caseNodeset = m[1]
+      const calculate = m[2]
+
+      // Only check calculate expressions that reference form data paths
+      // Skip literals like "'patient'" and instance references
+      if (!calculate.startsWith('/data/') || calculate.startsWith('/data/case/')) continue
+
+      if (!validPaths.has(calculate)) {
+        const propName = caseNodeset.split('/').pop()
+        errors.push(
+          `Case property "${propName}" in ${filePath} references path "${calculate}" ` +
+          `but no question exists at that path. The question may be inside a group — ` +
+          `check that the path includes the group name (e.g. "/data/group_name/question_id").`
+        )
+      }
+    }
+
+    // Check case preload binds (these use nodeset="/data/question" as the target)
+    // Preload works by: <setvalue ref="/data/preloaded_q" event="..." value="instance('casedb')/..."/>
+    // But preload paths are in the HQ JSON actions, not in XForm binds, so we check the
+    // data instance elements instead: every preload question path must have a data element
+    // This is already covered by bind-instance consistency check above
 
     return errors
   }
