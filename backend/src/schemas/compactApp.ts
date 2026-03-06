@@ -149,6 +149,13 @@ export const compactAppSchema = z.object({
   ),
 }).describe('A CommCare application definition in compact JSON format')
 
+// Derive TypeScript types from the Zod schema — single source of truth.
+export type CompactApp = z.infer<typeof compactAppSchema>
+export type CompactModule = z.infer<typeof compactModuleSchema>
+export type CompactForm = z.infer<typeof compactFormSchema>
+export type CompactQuestion = z.infer<typeof compactQuestionSchema>
+export type CompactChildCase = z.infer<typeof compactChildCaseSchema>
+
 /**
  * Converts the Zod schema to a plain JSON Schema object.
  *

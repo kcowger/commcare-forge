@@ -1,4 +1,5 @@
 import { randomBytes } from 'crypto'
+import type { CompactApp, CompactForm, CompactQuestion } from '../schemas/compactApp'
 
 /** Reserved case property names — HQ rejects these in update_case */
 const RESERVED_CASE_PROPERTIES = new Set([
@@ -11,69 +12,6 @@ const RESERVED_CASE_PROPERTIES = new Set([
 
 /** Media/binary question types — cannot be saved as case properties */
 const MEDIA_QUESTION_TYPES = new Set(['image', 'audio', 'video', 'signature'])
-
-/**
- * Compact format that Claude outputs — contains only the variable parts.
- * The expander converts this into the full HQ import JSON with all boilerplate.
- */
-export interface CompactApp {
-  app_name: string
-  modules: CompactModule[]
-}
-
-export interface CompactModule {
-  name: string
-  case_type?: string
-  forms: CompactForm[]
-  case_list_columns?: { field: string; header: string }[]
-}
-
-export interface CompactChildCase {
-  /** The case_type of the child case (e.g. "referral", "pregnancy") */
-  case_type: string
-  /** Which question's value becomes the child case name */
-  case_name_field: string
-  /** Map of child case property name → question id */
-  case_properties?: Record<string, string>
-  /** "child" (default) or "extension" — extension prevents parent from closing */
-  relationship?: 'child' | 'extension'
-  /** If inside a repeat group, the repeat group question id (one child case per repeat entry) */
-  repeat_context?: string
-}
-
-export interface CompactForm {
-  name: string
-  /** "registration" = creates a new case, "followup" = updates existing case, "survey" = no case management */
-  type: 'registration' | 'followup' | 'survey'
-  /** Which question's value becomes the case name (registration forms only) */
-  case_name_field?: string
-  /** Map of case property → question id for saving to case */
-  case_properties?: Record<string, string>
-  /** Map of question id → case property for loading from case (followup forms only) */
-  case_preload?: Record<string, string>
-  /** Close the parent case. true = always close, {question, answer} = conditional close (followup only) */
-  close_case?: boolean | { question: string; answer: string }
-  /** Create child/sub-cases linked to the parent case */
-  child_cases?: CompactChildCase[]
-  questions: CompactQuestion[]
-}
-
-export interface CompactQuestion {
-  id: string
-  type: 'text' | 'int' | 'date' | 'select1' | 'select' | 'geopoint' | 'image' | 'barcode' | 'decimal' | 'long' | 'trigger' | 'phone' | 'time' | 'datetime' | 'audio' | 'video' | 'signature' | 'hidden' | 'secret' | 'group' | 'repeat'
-  label: string
-  hint?: string
-  required?: boolean
-  readonly?: boolean
-  constraint?: string
-  constraint_msg?: string
-  relevant?: string
-  calculate?: string
-  /** For select1/select questions */
-  options?: { value: string; label: string }[]
-  /** For group/repeat questions — nested child questions */
-  children?: CompactQuestion[]
-}
 
 /**
  * Expands a compact app definition into the full HQ import JSON.
