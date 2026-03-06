@@ -16,7 +16,7 @@ import { CczCompiler } from '../../backend/src/services/cczCompiler'
 import { getCompactAppJsonSchema } from '../../backend/src/schemas/compactApp'
 import { mkdirSync, writeFileSync, copyFileSync } from 'fs'
 import { resolve } from 'path'
-import type { CompactApp } from '../../backend/src/services/hqJsonExpander'
+import type { CompactApp } from '../../backend/src/schemas/compactApp'
 
 interface ValidateInput {
   compact_json: CompactApp

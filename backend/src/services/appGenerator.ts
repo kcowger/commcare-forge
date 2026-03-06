@@ -20,7 +20,7 @@ import { GENERATOR_TOOL_USE_PROMPT } from '../prompts/generatorToolUse'
 import { FIXER_TOOL_USE_PROMPT } from '../prompts/fixerToolUse'
 import { getCompactAppJsonSchema } from '../schemas/compactApp'
 import { expandToHqJson, validateCompact } from './hqJsonExpander'
-import type { CompactApp } from './hqJsonExpander'
+import type { CompactApp } from '../schemas/compactApp'
 
 /**
  * Tool definition passed to Claude's API via sendOneShotWithTool().

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { validateCompact, expandToHqJson } from '../backend/src/services/hqJsonExpander'
-import type { CompactApp } from '../backend/src/services/hqJsonExpander'
+import type { CompactApp } from '../backend/src/schemas/compactApp'
 
 function minimalApp(overrides?: Partial<CompactApp>): CompactApp {
   return {
