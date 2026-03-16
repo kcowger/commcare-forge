@@ -4,6 +4,7 @@ import mammoth from 'mammoth'
 import * as XLSX from 'xlsx'
 import { SYSTEM_PROMPT } from '../prompts/system'
 import type { FileAttachment, ConversationMessage } from '../types'
+import type { ZodType } from 'zod'
 
 /**
  * Wrapper around the Anthropic SDK that manages conversation history and
@@ -125,7 +126,7 @@ export class ClaudeService {
     message: string,
     tool: { name: string; description: string; input_schema: Record<string, unknown> },
     onChunk?: (chunk: string) => void,
-    options?: { model?: string; maxTokens?: number }
+    options?: { model?: string; maxTokens?: number; zodSchema?: ZodType<T> }
   ): Promise<T> {
     const stream = this.client.messages.stream({
       model: options?.model || this.model,
@@ -154,6 +155,18 @@ export class ClaudeService {
 
     if (!toolUse) {
       throw new Error('Claude did not return a tool_use block')
+    }
+
+    // Validate against Zod schema if provided — catches malformed output before it crashes downstream
+    if (options?.zodSchema) {
+      const result = options.zodSchema.safeParse(toolUse.input)
+      if (!result.success) {
+        const issues = result.error.issues.slice(0, 5).map(
+          (i: any) => `${i.path.join('.')}: ${i.message}`
+        ).join('; ')
+        throw new Error(`Claude returned invalid structured output: ${issues}`)
+      }
+      return result.data
     }
 
     return toolUse.input as T

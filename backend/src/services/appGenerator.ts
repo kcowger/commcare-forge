@@ -18,7 +18,7 @@ import { AppExporter } from './appExporter'
 import { BuildLogger } from './buildLogger'
 import { GENERATOR_TOOL_USE_PROMPT } from '../prompts/generatorToolUse'
 import { FIXER_TOOL_USE_PROMPT } from '../prompts/fixerToolUse'
-import { getCompactAppJsonSchema } from '../schemas/compactApp'
+import { getCompactAppJsonSchema, compactAppSchema } from '../schemas/compactApp'
 import { expandToHqJson, validateCompact } from './hqJsonExpander'
 import type { CompactApp } from '../schemas/compactApp'
 
@@ -87,7 +87,7 @@ export class AppGenerator {
       compact = await this.claudeService.sendOneShotWithTool<CompactApp>(
         GENERATOR_TOOL_USE_PROMPT, message, SUBMIT_TOOL,
         () => { /* streaming progress — UI shows spinner */ },
-        { maxTokens: 64000 }
+        { maxTokens: 64000, zodSchema: compactAppSchema }
       )
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err)
@@ -176,7 +176,7 @@ export class AppGenerator {
         fixedCompact = await this.claudeService.sendOneShotWithTool<CompactApp>(
           FIXER_TOOL_USE_PROMPT, fixMessage, SUBMIT_TOOL,
           () => { /* streaming progress */ },
-          { model: 'claude-haiku-4-5-20251001', maxTokens: 32768 }
+          { model: 'claude-haiku-4-5-20251001', maxTokens: 32768, zodSchema: compactAppSchema }
         )
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err)

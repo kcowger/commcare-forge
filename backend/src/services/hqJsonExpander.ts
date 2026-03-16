@@ -21,7 +21,7 @@ export function expandToHqJson(compact: CompactApp): Record<string, any> {
   const langs: string[] = compact.languages?.length
     ? compact.languages.map(l => l.code)
     : ['en']
-  const defaultLang = compact.languages?.find(l => l.default)?.code || langs[0]
+  const defaultLang = compact.languages?.find(l => l.default)?.code || langs[0] || 'en'
 
   // Helper: build a multi-lang name object from a string (uses default lang)
   function makeMultiLangName(name: string): Record<string, string> {
@@ -30,16 +30,18 @@ export function expandToHqJson(compact: CompactApp): Record<string, any> {
     return result
   }
 
-  for (let mIdx = 0; mIdx < compact.modules.length; mIdx++) {
-    const cm = compact.modules[mIdx]
+  const compactModules = compact.modules || []
+  for (let mIdx = 0; mIdx < compactModules.length; mIdx++) {
+    const cm = compactModules[mIdx]
     const moduleUniqueId = genHexId()
-    const hasCases = cm.case_type && cm.forms.some(f => f.type !== 'survey')
+    const hasCases = cm.case_type && (cm.forms || []).some(f => f.type !== 'survey')
     const caseType = hasCases ? cm.case_type! : ''
 
     const forms: any[] = []
 
-    for (let fIdx = 0; fIdx < cm.forms.length; fIdx++) {
-      const cf = cm.forms[fIdx]
+    const cmForms = cm.forms || []
+    for (let fIdx = 0; fIdx < cmForms.length; fIdx++) {
+      const cf = cmForms[fIdx]
       const formUniqueId = genHexId()
       const xmlns = `${XMLNS_PREFIX}${genShortId()}`
 
@@ -102,14 +104,16 @@ export function expandToHqJson(compact: CompactApp): Record<string, any> {
 
   // Resolve form_links: map form names → unique_ids across all modules
   const formNameToId = new Map<string, string>()
-  for (let mIdx = 0; mIdx < compact.modules.length; mIdx++) {
-    for (let fIdx = 0; fIdx < compact.modules[mIdx].forms.length; fIdx++) {
-      formNameToId.set(compact.modules[mIdx].forms[fIdx].name, modules[mIdx].forms[fIdx].unique_id)
+  for (let mIdx = 0; mIdx < compactModules.length; mIdx++) {
+    const mForms = compactModules[mIdx].forms || []
+    for (let fIdx = 0; fIdx < mForms.length; fIdx++) {
+      formNameToId.set(mForms[fIdx].name, modules[mIdx].forms[fIdx].unique_id)
     }
   }
-  for (let mIdx = 0; mIdx < compact.modules.length; mIdx++) {
-    for (let fIdx = 0; fIdx < compact.modules[mIdx].forms.length; fIdx++) {
-      const cf = compact.modules[mIdx].forms[fIdx]
+  for (let mIdx = 0; mIdx < compactModules.length; mIdx++) {
+    const mForms = compactModules[mIdx].forms || []
+    for (let fIdx = 0; fIdx < mForms.length; fIdx++) {
+      const cf = mForms[fIdx]
       if (cf.form_links?.length) {
         modules[mIdx].forms[fIdx].form_links = cf.form_links.map(link => {
           const targetId = formNameToId.get(link.form_name)
@@ -457,7 +461,7 @@ function buildFormActions(form: CompactForm, caseType: string): any {
   if (form.type === 'registration') {
     // Open case
     base.open_case.condition = makeCondition('always')
-    base.open_case.name_update.question_path = resolveQuestionPath(form.case_name_field || form.questions[0]?.id || 'name')
+    base.open_case.name_update.question_path = resolveQuestionPath(form.case_name_field || form.questions?.[0]?.id || 'name')
 
     // Update case properties (filtered)
     const updateMap = buildSafeUpdateMap(form.case_properties)
@@ -609,16 +613,18 @@ export function validateCompact(compact: CompactApp): string[] {
   // Structural checks (app_name, module/form/question names, types) are handled
   // by the Zod schema — only cross-field semantic validations remain here.
 
-  for (let mIdx = 0; mIdx < compact.modules.length; mIdx++) {
-    const mod = compact.modules[mIdx]
+  const validateModules = compact.modules || []
+  for (let mIdx = 0; mIdx < validateModules.length; mIdx++) {
+    const mod = validateModules[mIdx]
 
-    const hasCaseForms = mod.forms?.some(f => f.type !== 'survey')
+    const hasCaseForms = (mod.forms || []).some(f => f.type !== 'survey')
     if (hasCaseForms && !mod.case_type) {
       errors.push(`"${mod.name}" has case forms but no case_type`)
     }
 
-    for (let fIdx = 0; fIdx < mod.forms.length; fIdx++) {
-      const form = mod.forms[fIdx]
+    const validateForms = mod.forms || []
+    for (let fIdx = 0; fIdx < validateForms.length; fIdx++) {
+      const form = validateForms[fIdx]
       if (!form.questions || form.questions.length === 0) {
         errors.push(`"${form.name}" in "${mod.name}" has no questions`)
       }
@@ -781,7 +787,7 @@ export function validateCompact(compact: CompactApp): string[] {
 
       // Validate form_links
       if (form.form_links) {
-        const allFormNames = compact.modules.flatMap(m => m.forms.map(f => f.name))
+        const allFormNames = (compact.modules || []).flatMap(m => (m.forms || []).map(f => f.name))
         for (const link of form.form_links) {
           if (!allFormNames.includes(link.form_name)) {
             errors.push(`"${form.name}" form_links references "${link.form_name}" which doesn't match any form name in the app`)

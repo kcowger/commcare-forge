@@ -444,8 +444,8 @@ export function registerIpcHandlers(ipcMain: IpcMain) {
 
     // Still failing after auto-fix — export what we have
     const exportPath = await exporter.exportCcz(validationPath, baseName)
-    const errorSummary = combinedErrors.length > 0
-      ? combinedErrors[0].substring(0, 200)
+    const errorSummary = combinedErrors.length > 0 && combinedErrors[0]
+      ? String(combinedErrors[0]).substring(0, 200)
       : 'Unknown validation error'
     sendProgress({ status: 'failed', message: `Validation failed: ${errorSummary}`, attempt: 1 })
     return { success: false, cczPath: exportPath, exportPath, errors: combinedErrors }
@@ -505,8 +505,8 @@ export function registerIpcHandlers(ipcMain: IpcMain) {
       // Validation failed — copy anyway so user can download
       const exporter = new AppExporter()
       const exportPath = await exporter.exportCcz(filePath, baseName)
-      const errorSummary = validation.errors.length > 0
-        ? validation.errors[0].substring(0, 200)
+      const errorSummary = validation.errors.length > 0 && validation.errors[0]
+        ? String(validation.errors[0]).substring(0, 200)
         : 'Unknown validation error'
       sendProgress({ status: 'failed', message: `Validation failed: ${errorSummary}`, attempt: 1 })
       return { success: false, cczPath: exportPath, exportPath, errors: validation.errors }

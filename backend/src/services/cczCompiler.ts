@@ -252,7 +252,7 @@ export class CczCompiler {
         addBind({ nodeset: '/data/case/create/owner_id', calculate: `instance('${SUITE.SESSION_INSTANCE_ID}')/session/context/userid` })
       }
 
-      if (isUpdate && updateCase.update) {
+      if (isUpdate && updateCase?.update && typeof updateCase.update === 'object') {
         const props = Object.keys(updateCase.update)
         if (props.length > 0) {
           const updateEl = el(doc, 'update')
@@ -371,7 +371,7 @@ export class CczCompiler {
   private getLangName(nameObj: any, lang: string, defaultLang: string): string {
     if (!nameObj) return ''
     if (typeof nameObj === 'string') return nameObj
-    return nameObj[lang] || nameObj[defaultLang] || nameObj.en || Object.values(nameObj)[0] as string || ''
+    return nameObj[lang] || nameObj[defaultLang] || nameObj.en || (Object.values(nameObj)[0] as string) || ''
   }
 
   private escapeXml(s: string): string {
