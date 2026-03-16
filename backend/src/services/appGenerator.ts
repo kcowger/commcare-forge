@@ -271,8 +271,8 @@ export class AppGenerator {
     // Compile CCZ from HQ JSON
     let exportPath: string | undefined
     try {
-      const cczPath = await this.cczCompiler.compile(hqJson, appName)
-      exportPath = await this.appExporter.exportCcz(cczPath, appName)
+      const cczResult = await this.cczCompiler.compile(hqJson, appName)
+      exportPath = await this.appExporter.exportCcz(cczResult.cczPath, appName)
       logger.log(`CCZ exported: ${exportPath}`)
     } catch (err: any) {
       logger.log(`WARNING: CCZ compilation failed: ${err.message}`)

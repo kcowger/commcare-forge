@@ -137,7 +137,7 @@ const compactFormSchema = z.object({
     'Map of case property name -> question id. These question values get saved to the case. Do NOT include case_name_field here. NEVER use reserved property names (case_id, case_name, case_type, status, name, date, type, etc.) as keys. NEVER map media questions (image, audio, video, signature) to case properties.'
   ),
   case_preload: z.record(z.string(), z.string()).optional().describe(
-    'Followup forms only: map of question id -> case property name. Pre-fills form questions with existing case data. To load case name use "case_name" as the value. If user should edit and save back, include same field in BOTH case_preload AND case_properties.'
+    'Followup forms only: map of question id -> case property name. Pre-fills form questions with existing case data. To load the case name use "name" as the value (NOT "case_name"). If user should edit and save back, include same field in BOTH case_preload AND case_properties.'
   ),
   close_case: z.union([
     z.boolean(),

@@ -339,7 +339,7 @@ describe('e2e: followup with preloads in groups', () => {
 
     // Preloads should use full grouped paths
     expect(followupActions.case_preload.preload).toEqual({
-      '/data/preload_group/preload_mother_name': 'case_name',
+      '/data/preload_group/preload_mother_name': 'name',
       '/data/preload_group/preload_edd': 'edd'
     })
 

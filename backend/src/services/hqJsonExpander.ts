@@ -481,11 +481,17 @@ function buildFormActions(form: CompactForm, caseType: string): any {
 
     // Preload case data into form questions
     // Note: preload values are case properties being READ FROM, not saved TO.
-    // Reserved words like case_name are valid preload sources (e.g. displaying the case name).
+    // HQ rejects "case_name" even in preload — the correct preload source for
+    // reading the case name is "name" (not "case_name").
     if (form.case_preload && Object.keys(form.case_preload).length > 0) {
+      const PRELOAD_RENAME: Record<string, string> = {
+        case_name: 'name',
+        case_type: 'case_type',  // this one is actually valid in preload
+        case_id: '@case_id',
+      }
       const preloadMap: Record<string, string> = {}
       for (const [questionId, caseProp] of Object.entries(form.case_preload)) {
-        preloadMap[resolveQuestionPath(questionId)] = caseProp
+        preloadMap[resolveQuestionPath(questionId)] = PRELOAD_RENAME[caseProp] || caseProp
       }
       if (Object.keys(preloadMap).length > 0) {
         base.case_preload.condition = makeCondition('always')
