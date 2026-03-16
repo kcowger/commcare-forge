@@ -3,6 +3,8 @@ import { mkdirSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { randomUUID } from 'crypto'
+import { PROFILE, SUITE, VALIDATION_PATTERNS } from '../constants/commcareConfig'
+import { parseXml, serialize, el } from '../utils/xmlBuilder'
 
 /**
  * Compiles HQ import JSON into a .ccz archive for mobile deployment.
@@ -10,43 +12,71 @@ import { randomUUID } from 'crypto'
  */
 export class CczCompiler {
 
-  async compile(hqJson: Record<string, any>, appName: string): Promise<string> {
+  async compile(hqJson: Record<string, any>, appName: string): Promise<{ cczPath: string; files: Record<string, string> }> {
     const modules: any[] = hqJson.modules || []
     const attachments: Record<string, string> = hqJson._attachments || {}
+    const langs: string[] = hqJson.langs || ['en']
+    const defaultLang = langs[0]
 
     // Generate all CCZ files
     const files: Record<string, string> = {}
 
     files['profile.ccpr'] = this.generateProfile(appName)
-    files['media_suite.xml'] = '<?xml version="1.0"?>\n<suite version="1"/>'
+    files['media_suite.xml'] = `<?xml version="1.0"?>\n<suite version="${SUITE.VERSION}"/>`
 
-    const appStrings: Record<string, string> = { 'app.name': appName }
+    // Per-language app_strings maps
+    const appStringsByLang = new Map<string, Record<string, string>>()
+    for (const lang of langs) appStringsByLang.set(lang, { 'app.name': appName })
+
     const suiteEntries: string[] = []
     const suiteMenus: string[] = []
     const suiteDetails: string[] = []
     const suiteResources: string[] = []
+    const suiteFixtures: string[] = []
+
+    // Include fixture files (lookup tables) from _attachments
+    for (const [key, content] of Object.entries(attachments)) {
+      if (key.startsWith('fixture:')) {
+        const tag = key.slice('fixture:'.length)
+        const fixturePath = `fixtures/${tag}.xml`
+        files[fixturePath] = content
+        suiteFixtures.push(
+          `  <fixture id="item-list:${tag}" user_id="">\n    <resource id="fixture-${tag}" version="${SUITE.VERSION}">\n      <location authority="local">./${fixturePath}</location>\n    </resource>\n  </fixture>`
+        )
+      }
+    }
 
     for (let mIdx = 0; mIdx < modules.length; mIdx++) {
       const mod = modules[mIdx]
-      const modName = mod.name?.en || `Module ${mIdx}`
       const caseType = mod.case_type || ''
       const forms: any[] = mod.forms || []
 
-      appStrings[`modules.m${mIdx}`] = modName
+      // Set module name for each language
+      for (const lang of langs) {
+        const strings = appStringsByLang.get(lang)!
+        strings[`modules.m${mIdx}`] = this.getLangName(mod.name, lang, defaultLang) || `Module ${mIdx}`
+      }
 
       // Case detail definitions (if module uses cases)
       if (caseType) {
-        appStrings['case_list_title'] = appStrings['case_list_title'] || `${modName}`
-        appStrings['case_name_header'] = appStrings['case_name_header'] || 'Name'
+        for (const lang of langs) {
+          const strings = appStringsByLang.get(lang)!
+          const modName = this.getLangName(mod.name, lang, defaultLang) || `Module ${mIdx}`
+          strings['case_list_title'] = strings['case_list_title'] || modName
+          strings['case_name_header'] = strings['case_name_header'] || 'Name'
+        }
 
         suiteDetails.push(this.generateDetail(`m${mIdx}_case_short`, 'short', mod.case_details?.short?.columns || []))
         suiteDetails.push(this.generateDetail(`m${mIdx}_case_long`, 'long', mod.case_details?.long?.columns || []))
 
-        // Add column headers to app_strings
+        // Add column headers to app_strings for each language
         const columns = mod.case_details?.short?.columns || []
         for (const col of columns) {
           const headerKey = `m${mIdx}_${col.field}_header`
-          appStrings[headerKey] = col.header?.en || col.field
+          for (const lang of langs) {
+            const strings = appStringsByLang.get(lang)!
+            strings[headerKey] = this.getLangName(col.header, lang, defaultLang) || col.field
+          }
         }
       }
 
@@ -54,14 +84,17 @@ export class CczCompiler {
 
       for (let fIdx = 0; fIdx < forms.length; fIdx++) {
         const form = forms[fIdx]
-        const formName = form.name?.en || `Form ${fIdx}`
         const xmlns = form.xmlns || ''
         const uniqueId = form.unique_id || ''
         const requires = form.requires || 'none'
         const cmdId = `m${mIdx}-f${fIdx}`
         const filePath = `modules-${mIdx}/forms-${fIdx}.xml`
 
-        appStrings[`forms.m${mIdx}f${fIdx}`] = formName
+        // Set form name for each language
+        for (const lang of langs) {
+          const strings = appStringsByLang.get(lang)!
+          strings[`forms.m${mIdx}f${fIdx}`] = this.getLangName(form.name, lang, defaultLang) || `Form ${fIdx}`
+        }
 
         // Get the clean XForm from _attachments and add case blocks
         let xform = attachments[`${uniqueId}.xml`] || ''
@@ -72,15 +105,15 @@ export class CczCompiler {
 
         // Resource declaration
         suiteResources.push(
-          `  <xform>\n    <resource id="${filePath}" version="1">\n      <location authority="local">./${filePath}</location>\n    </resource>\n  </xform>`
+          `  <xform>\n    <resource id="${filePath}" version="${SUITE.VERSION}">\n      <location authority="local">./${filePath}</location>\n    </resource>\n  </xform>`
         )
 
         // Entry
         let entry = `  <entry>\n    <form>${xmlns}</form>\n    <command id="${cmdId}">\n      <text><locale id="forms.m${mIdx}f${fIdx}"/></text>\n    </command>`
 
         if (requires === 'case' && caseType) {
-          entry += `\n    <instance id="casedb" src="jr://instance/casedb"/>`
-          entry += `\n    <session>\n      <datum id="case_id" nodeset="instance('casedb')/casedb/case[@case_type='${this.validateCaseType(caseType)}'][@status='open']" value="./@case_id" detail-select="m${mIdx}_case_short"/>\n    </session>`
+          entry += `\n    <instance id="${SUITE.CASEDB_INSTANCE_ID}" src="${SUITE.CASEDB_INSTANCE_SRC}"/>`
+          entry += `\n    <session>\n      <datum id="case_id" nodeset="instance('${SUITE.CASEDB_INSTANCE_ID}')/casedb/case[@case_type='${this.validateCaseType(caseType)}'][@status='open']" value="./@case_id" detail-select="m${mIdx}_case_short"/>\n    </session>`
         }
 
         entry += `\n  </entry>`
@@ -93,40 +126,49 @@ export class CczCompiler {
       )
     }
 
-    // Build suite.xml
-    const localeResource = `  <locale language="default">\n    <resource id="app_strings" version="1">\n      <location authority="local">./default/app_strings.txt</location>\n    </resource>\n  </locale>`
+    // Build suite.xml with locale resources for each language
+    const localeResources = langs.map(lang => {
+      const dir = lang === defaultLang ? 'default' : lang
+      return `  <locale language="${lang === defaultLang ? 'default' : lang}">\n    <resource id="${dir}_app_strings" version="${SUITE.VERSION}">\n      <location authority="local">./${dir}/app_strings.txt</location>\n    </resource>\n  </locale>`
+    }).join('\n')
 
-    files['suite.xml'] = `<?xml version="1.0"?>\n<suite version="1">\n${suiteResources.join('\n')}\n${localeResource}\n${suiteDetails.join('\n')}\n${suiteEntries.join('\n')}\n${suiteMenus.join('\n')}\n</suite>`
+    const fixtureSection = suiteFixtures.length > 0 ? '\n' + suiteFixtures.join('\n') : ''
+    files['suite.xml'] = `<?xml version="1.0"?>\n<suite version="${SUITE.VERSION}">\n${suiteResources.join('\n')}\n${localeResources}\n${suiteDetails.join('\n')}\n${suiteEntries.join('\n')}\n${suiteMenus.join('\n')}${fixtureSection}\n</suite>`
 
-    // Build app_strings.txt
-    files['default/app_strings.txt'] = Object.entries(appStrings)
-      .map(([k, v]) => `${k}=${v}`)
-      .join('\n')
+    // Build per-language app_strings.txt files
+    for (const lang of langs) {
+      const dir = lang === defaultLang ? 'default' : lang
+      const strings = appStringsByLang.get(lang)!
+      files[`${dir}/app_strings.txt`] = Object.entries(strings)
+        .map(([k, v]) => `${k}=${v}`)
+        .join('\n')
+    }
 
     // Package into CCZ
-    return this.packageCcz(files, appName)
+    const cczPath = await this.packageCcz(files, appName)
+    return { cczPath, files }
   }
 
   private generateProfile(appName: string): string {
     return `<?xml version="1.0"?>
-<profile xmlns="http://cihi.commcarehq.org/jad"
-         version="1"
+<profile xmlns="${PROFILE.XMLNS}"
+         version="${PROFILE.VERSION}"
          uniqueid="${randomUUID()}"
          name="${this.escapeXml(appName)}"
-         update="http://localhost/update">
-  <property key="CommCare App Name" value="${this.escapeXml(appName)}"/>
-  <property key="cc-content-version" value="1"/>
-  <property key="cc-app-version" value="1"/>
+         update="${PROFILE.UPDATE_URL}">
+  <property key="${PROFILE.PROPERTIES.APP_NAME}" value="${this.escapeXml(appName)}"/>
+  <property key="${PROFILE.PROPERTIES.CONTENT_VERSION}" value="${PROFILE.VERSION}"/>
+  <property key="${PROFILE.PROPERTIES.APP_VERSION}" value="${PROFILE.VERSION}"/>
   <features>
     <users active="true"/>
   </features>
   <suite>
-    <resource id="suite" version="1" descriptor="Suite Definition">
+    <resource id="suite" version="${SUITE.VERSION}" descriptor="Suite Definition">
       <location authority="local">./suite.xml</location>
     </resource>
   </suite>
   <suite>
-    <resource id="media-suite" version="1" descriptor="Media Suite Definition">
+    <resource id="media-suite" version="${SUITE.VERSION}" descriptor="Media Suite Definition">
       <location authority="local">./media_suite.xml</location>
     </resource>
   </suite>
@@ -154,7 +196,10 @@ export class CczCompiler {
     return `  <detail id="${id}">\n    <title><text><locale id="case_list_title"/></text></title>\n${fields.join('\n')}\n  </detail>`
   }
 
-  /** Add case blocks back into an XForm based on form actions (for mobile runtime). */
+  /**
+   * Add case blocks into an XForm based on form actions (for mobile runtime).
+   * Uses DOM parsing instead of regex to safely inject case XML elements.
+   */
   private addCaseBlocks(xform: string, actions: any, caseType: string): string {
     if (!actions) return xform
 
@@ -169,46 +214,74 @@ export class CczCompiler {
 
     if (!isCreate && !isUpdate && !isClose && !hasSubcases) return xform
 
-    // Build case data element
-    let caseChildren = ''
-    const binds: string[] = []
+    const doc = parseXml(xform)
+    const dataEl = doc.getElementsByTagName('data')[0]
+    const modelEl = doc.getElementsByTagName('model')[0]
+    if (!dataEl || !modelEl) return xform
 
-    if (isCreate) {
-      caseChildren += '\n            <create>\n              <case_type/>\n              <case_name/>\n              <owner_id/>\n            </create>'
-      binds.push(`      <bind nodeset="/data/case/create/case_type" calculate="'${this.validateCaseType(caseType)}'"/>`)
-      const namePath = openCase.name_update?.question_path || '/data/name'
-      binds.push(`      <bind nodeset="/data/case/create/case_name" calculate="${this.validateXFormPath(namePath)}"/>`)
-      binds.push(`      <bind nodeset="/data/case/create/owner_id" calculate="instance('commcaresession')/session/context/userid"/>`)
+    // Helper: find the itext element or model end to insert binds before
+    const itextEl = doc.getElementsByTagName('itext')[0]
+
+    // Helper: create and append a bind element
+    const addBind = (attrs: Record<string, string>) => {
+      const bind = el(doc, 'bind', attrs)
+      if (itextEl) {
+        modelEl.insertBefore(bind, itextEl)
+        modelEl.insertBefore(doc.createTextNode('\n      '), itextEl)
+      } else {
+        modelEl.appendChild(doc.createTextNode('      '))
+        modelEl.appendChild(bind)
+        modelEl.appendChild(doc.createTextNode('\n    '))
+      }
     }
 
-    if (isUpdate && updateCase.update) {
-      const props = Object.keys(updateCase.update)
-      if (props.length > 0) {
-        const propElements = props.map(p => `              <${this.validatePropertyName(p)}/>`).join('\n')
-        caseChildren += `\n            <update>\n${propElements}\n            </update>`
-        for (const [prop, mapping] of Object.entries(updateCase.update)) {
-          const validProp = this.validatePropertyName(prop)
-          const qPath = (mapping as any).question_path || `/data/${prop}`
-          binds.push(`      <bind nodeset="/data/case/update/${validProp}" calculate="${this.validateXFormPath(qPath)}"/>`)
+    // Build main case element
+    if (isCreate || isUpdate || isClose) {
+      const caseEl = el(doc, 'case')
+
+      if (isCreate) {
+        const createEl = el(doc, 'create')
+        createEl.appendChild(el(doc, 'case_type'))
+        createEl.appendChild(el(doc, 'case_name'))
+        createEl.appendChild(el(doc, 'owner_id'))
+        caseEl.appendChild(createEl)
+
+        addBind({ nodeset: '/data/case/create/case_type', calculate: `'${this.validateCaseType(caseType)}'` })
+        const namePath = openCase.name_update?.question_path || '/data/name'
+        addBind({ nodeset: '/data/case/create/case_name', calculate: this.validateXFormPath(namePath) })
+        addBind({ nodeset: '/data/case/create/owner_id', calculate: `instance('${SUITE.SESSION_INSTANCE_ID}')/session/context/userid` })
+      }
+
+      if (isUpdate && updateCase.update) {
+        const props = Object.keys(updateCase.update)
+        if (props.length > 0) {
+          const updateEl = el(doc, 'update')
+          for (const p of props) {
+            updateEl.appendChild(el(doc, this.validatePropertyName(p)))
+          }
+          caseEl.appendChild(updateEl)
+
+          for (const [prop, mapping] of Object.entries(updateCase.update)) {
+            const validProp = this.validatePropertyName(prop)
+            const qPath = (mapping as any).question_path || `/data/${prop}`
+            addBind({ nodeset: `/data/case/update/${validProp}`, calculate: this.validateXFormPath(qPath) })
+          }
         }
       }
-    }
 
-    if (isClose) {
-      caseChildren += '\n            <close/>'
-      if (closeCase.condition.type === 'if' && closeCase.condition.question) {
-        const qPath = this.validateXFormPath(closeCase.condition.question)
-        const answer = closeCase.condition.answer || ''
-        binds.push(`      <bind nodeset="/data/case/close" relevant="${qPath} = '${answer}'"/>`)
+      if (isClose) {
+        caseEl.appendChild(el(doc, 'close'))
+        if (closeCase.condition.type === 'if' && closeCase.condition.question) {
+          const qPath = this.validateXFormPath(closeCase.condition.question)
+          const answer = closeCase.condition.answer || ''
+          addBind({ nodeset: '/data/case/close', relevant: `${qPath} = '${answer}'` })
+        }
       }
+
+      dataEl.appendChild(caseEl)
     }
 
-    if (isCreate || isUpdate || isClose) {
-      const caseBlock = `          <case>${caseChildren}\n          </case>`
-      xform = xform.replace(/(<\/data>)/, `\n${caseBlock}\n        $1`)
-    }
-
-    // Subcases — each gets its own case element
+    // Subcases — each gets its own element
     for (let sIdx = 0; sIdx < subcases.length; sIdx++) {
       const sc = subcases[sIdx]
       if (sc.condition?.type !== 'always') continue
@@ -217,55 +290,65 @@ export class CczCompiler {
       const repeatCtx = sc.repeat_context || ''
       const basePath = repeatCtx ? `${repeatCtx}/${elName}` : `/data/${elName}`
 
-      let scChildren = ''
-      scChildren += '\n            <create>\n              <case_type/>\n              <case_name/>\n              <owner_id/>\n            </create>'
-      binds.push(`      <bind nodeset="${basePath}/create/case_type" calculate="'${this.validateCaseType(sc.case_type)}'"/>`)
+      const scEl = el(doc, elName)
+
+      // Create block
+      const createEl = el(doc, 'create')
+      createEl.appendChild(el(doc, 'case_type'))
+      createEl.appendChild(el(doc, 'case_name'))
+      createEl.appendChild(el(doc, 'owner_id'))
+      scEl.appendChild(createEl)
+
+      addBind({ nodeset: `${basePath}/create/case_type`, calculate: `'${this.validateCaseType(sc.case_type)}'` })
       const namePath = sc.name_update?.question_path || `${basePath}/name`
-      binds.push(`      <bind nodeset="${basePath}/create/case_name" calculate="${this.validateXFormPath(namePath)}"/>`)
-      binds.push(`      <bind nodeset="${basePath}/create/owner_id" calculate="instance('commcaresession')/session/context/userid"/>`)
+      addBind({ nodeset: `${basePath}/create/case_name`, calculate: this.validateXFormPath(namePath) })
+      addBind({ nodeset: `${basePath}/create/owner_id`, calculate: `instance('${SUITE.SESSION_INSTANCE_ID}')/session/context/userid` })
 
       // Parent index
-      scChildren += `\n            <index>\n              <parent case_type="${this.validateCaseType(caseType)}" relationship="${sc.relationship || 'child'}"/>\n            </index>`
+      const indexEl = el(doc, 'index')
+      const parentEl = el(doc, 'parent')
+      parentEl.setAttribute('case_type', this.validateCaseType(caseType))
+      parentEl.setAttribute('relationship', sc.relationship || 'child')
+      indexEl.appendChild(parentEl)
+      scEl.appendChild(indexEl)
 
       // Child case properties
       if (sc.case_properties && Object.keys(sc.case_properties).length > 0) {
-        const props = Object.entries(sc.case_properties)
-        const propElements = props.map(([p]) => `              <${this.validatePropertyName(p)}/>`).join('\n')
-        scChildren += `\n            <update>\n${propElements}\n            </update>`
-        for (const [prop, mapping] of props) {
+        const updateEl = el(doc, 'update')
+        for (const [p] of Object.entries(sc.case_properties)) {
+          updateEl.appendChild(el(doc, this.validatePropertyName(p)))
+        }
+        scEl.appendChild(updateEl)
+
+        for (const [prop, mapping] of Object.entries(sc.case_properties)) {
           const validProp = this.validatePropertyName(prop)
           const qPath = (mapping as any).question_path || `/data/${prop}`
-          binds.push(`      <bind nodeset="${basePath}/update/${validProp}" calculate="${this.validateXFormPath(qPath)}"/>`)
+          addBind({ nodeset: `${basePath}/update/${validProp}`, calculate: this.validateXFormPath(qPath) })
         }
       }
 
-      const scBlock = `          <${elName}>${scChildren}\n          </${elName}>`
-      xform = xform.replace(/(<\/data>)/, `\n${scBlock}\n        $1`)
-    }
-
-    // Insert case binds after the last existing <bind>
-    const bindStr = binds.join('\n')
-    const lastBindIdx = xform.lastIndexOf('</bind>')
-    if (lastBindIdx === -1) {
-      // No existing binds, insert before <itext> or </model>
-      xform = xform.replace(/(<itext>|<\/model>)/, `${bindStr}\n      $1`)
-    } else {
-      // Find the end of the last bind's line
-      const afterLastBind = xform.indexOf('\n', lastBindIdx)
-      if (afterLastBind !== -1) {
-        xform = xform.substring(0, afterLastBind + 1) + bindStr + '\n' + xform.substring(afterLastBind + 1)
-      }
+      dataEl.appendChild(scEl)
     }
 
     // Add commcaresession instance if not present
-    if (!xform.includes("id=\"commcaresession\"")) {
-      xform = xform.replace(
-        /(<\/instance>)/,
-        `$1\n      <instance id="commcaresession" src="jr://instance/session"/>`
-      )
+    const instances = doc.getElementsByTagName('instance')
+    let hasSession = false
+    for (let i = 0; i < instances.length; i++) {
+      if (instances[i].getAttribute('id') === SUITE.SESSION_INSTANCE_ID) {
+        hasSession = true
+        break
+      }
+    }
+    if (!hasSession) {
+      const mainInstance = instances[0]
+      if (mainInstance && mainInstance.parentNode) {
+        const sessionInstance = el(doc, 'instance', { id: SUITE.SESSION_INSTANCE_ID, src: SUITE.SESSION_INSTANCE_SRC })
+        mainInstance.parentNode.insertBefore(doc.createTextNode('\n      '), mainInstance.nextSibling)
+        mainInstance.parentNode.insertBefore(sessionInstance, mainInstance.nextSibling?.nextSibling || null)
+      }
     }
 
-    return xform
+    return serialize(doc)
   }
 
   private async packageCcz(files: Record<string, string>, appName: string): Promise<string> {
@@ -284,13 +367,20 @@ export class CczCompiler {
     return cczPath
   }
 
+  /** Extract a localized name string from a multi-lang name object like {en: "Name", fr: "Nom"} */
+  private getLangName(nameObj: any, lang: string, defaultLang: string): string {
+    if (!nameObj) return ''
+    if (typeof nameObj === 'string') return nameObj
+    return nameObj[lang] || nameObj[defaultLang] || nameObj.en || Object.values(nameObj)[0] as string || ''
+  }
+
   private escapeXml(s: string): string {
     return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
   }
 
   /** Validate a CommCare case type identifier */
   private validateCaseType(ct: string): string {
-    if (!/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(ct)) {
+    if (!VALIDATION_PATTERNS.CASE_TYPE_STRICT.test(ct)) {
       throw new Error(`Invalid case type: "${ct}"`)
     }
     return ct
@@ -298,7 +388,7 @@ export class CczCompiler {
 
   /** Validate an XForm data path (e.g. /data/name) */
   private validateXFormPath(p: string): string {
-    if (!/^\/data\/[a-zA-Z0-9_/]+$/.test(p)) {
+    if (!VALIDATION_PATTERNS.XFORM_PATH.test(p)) {
       throw new Error(`Invalid XForm path: "${p}"`)
     }
     return p
@@ -306,7 +396,7 @@ export class CczCompiler {
 
   /** Validate an XML element / case property name */
   private validatePropertyName(name: string): string {
-    if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) {
+    if (!VALIDATION_PATTERNS.XML_ELEMENT_NAME.test(name)) {
       throw new Error(`Invalid property name: "${name}"`)
     }
     return name

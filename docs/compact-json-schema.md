@@ -102,13 +102,13 @@ This document defines the compact JSON format used to describe CommCare applicat
 
 ## Reserved Case Property Names
 
-The following names are reserved by CommCare and must NEVER be used in case_properties or case_preload:
+The following names are reserved by CommCare and must NEVER be used as keys in case_properties:
 
-case_id, case_name, case_type, closed, closed_by, closed_on, date, date_modified, date_opened, doc_type, domain, external_id, index, indices, modified_on, name, opened_by, opened_on, owner_id, server_modified_on, status, type, user_id, xform_id
+actions, case_id, case_name, case_type, case_type_id, closed, closed_by, closed_on, commtrack, computed_, computed_modified_on_, create, date, date_modified, date-opened, date_opened, doc_type, domain, external-id, external_id, index, indices, initial_processing_complete, last_modified, modified_by, modified_on, name, opened_by, opened_on, owner_id, parent, referrals, server_modified_on, server_opened_on, status, type, user_id, userid, version, xform_id, xform_ids
 
 Use descriptive alternatives instead: visit_date, patient_type, case_status, full_name, etc.
 
-Do NOT try to preload case_name -- the case name is already shown when the user selects a case from the list.
+Note: case_preload VALUES are case properties being READ FROM — reserved names like "case_name" ARE valid preload sources.
 
 ## Smart Type Selection
 

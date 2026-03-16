@@ -1,0 +1,99 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`HQ JSON golden file regression > matches structural snapshot 1`] = `
+{
+  "application_version": "2.0",
+  "doc_type": "Application",
+  "langs": [
+    "en",
+  ],
+  "modules": [
+    {
+      "case_details_doc_type": "DetailPair",
+      "case_details_short_col_count": 2,
+      "case_details_short_doc_type": "Detail",
+      "case_details_short_fields": [
+        "case_name",
+        "age",
+      ],
+      "case_type": "patient",
+      "doc_type": "Module",
+      "forms": [
+        {
+          "actions_doc_type": "FormActions",
+          "close_case_condition_type": "never",
+          "doc_type": "Form",
+          "form_type": "module_form",
+          "has_unique_id": true,
+          "has_xmlns": true,
+          "open_case_condition_doc_type": "FormActionCondition",
+          "open_case_condition_type": "always",
+          "open_case_doc_type": "OpenCaseAction",
+          "preload_condition_type": "never",
+          "preload_keys": [],
+          "requires": "none",
+          "subcases_count": 0,
+          "update_case_condition_type": "always",
+          "update_case_doc_type": "UpdateCaseAction",
+          "update_case_keys": [
+            "patient_age",
+          ],
+        },
+        {
+          "actions_doc_type": "FormActions",
+          "close_case_condition_type": "if",
+          "doc_type": "Form",
+          "form_type": "module_form",
+          "has_unique_id": true,
+          "has_xmlns": true,
+          "open_case_condition_doc_type": "FormActionCondition",
+          "open_case_condition_type": "never",
+          "open_case_doc_type": "OpenCaseAction",
+          "preload_condition_type": "always",
+          "preload_keys": [
+            "/data/preloaded_name",
+          ],
+          "requires": "case",
+          "subcases_count": 0,
+          "update_case_condition_type": "always",
+          "update_case_doc_type": "UpdateCaseAction",
+          "update_case_keys": [
+            "last_visit",
+          ],
+        },
+      ],
+      "module_type": "basic",
+    },
+    {
+      "case_details_doc_type": "DetailPair",
+      "case_details_short_col_count": 0,
+      "case_details_short_doc_type": "Detail",
+      "case_details_short_fields": [],
+      "case_type": "",
+      "doc_type": "Module",
+      "forms": [
+        {
+          "actions_doc_type": "FormActions",
+          "close_case_condition_type": "never",
+          "doc_type": "Form",
+          "form_type": "module_form",
+          "has_unique_id": true,
+          "has_xmlns": true,
+          "open_case_condition_doc_type": "FormActionCondition",
+          "open_case_condition_type": "never",
+          "open_case_doc_type": "OpenCaseAction",
+          "preload_condition_type": "never",
+          "preload_keys": [],
+          "requires": "none",
+          "subcases_count": 0,
+          "update_case_condition_type": "never",
+          "update_case_doc_type": "UpdateCaseAction",
+          "update_case_keys": [],
+        },
+      ],
+      "module_type": "basic",
+    },
+  ],
+  "vellum_case_management": true,
+}
+`;

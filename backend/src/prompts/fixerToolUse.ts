@@ -30,7 +30,7 @@ A case_properties value references a question id not present in the form. Either
 
 ### "uses reserved case property name"
 These property names are RESERVED and cannot be used as keys in case_properties:
-case_id, case_name, case_type, closed, closed_by, closed_on, date, date_modified, date_opened, doc_type, domain, external_id, index, indices, modified_on, name, opened_by, opened_on, owner_id, server_modified_on, status, type, user_id, xform_id
+actions, case_id, case_name, case_type, case_type_id, closed, closed_by, closed_on, commtrack, computed_, computed_modified_on_, create, date, date_modified, date-opened, date_opened, doc_type, domain, external-id, external_id, index, indices, initial_processing_complete, last_modified, modified_by, modified_on, name, opened_by, opened_on, owner_id, parent, referrals, server_modified_on, server_opened_on, status, type, user_id, userid, version, xform_id, xform_ids
 
 RENAME the property to something descriptive (e.g. "status" → "case_status", "name" → "full_name", "date" → "visit_date", "type" → "case_category").
 
@@ -44,8 +44,7 @@ select1/select questions must have at least 2 options with {value, label}.
 Form type must be "registration", "followup", or "survey".
 
 ### "case_preload uses reserved property"
-Reserved words cannot be used in case_preload values either. Remove the preload entry.
-Do NOT preload case_name — the case name is already shown when the user selects the case.
+This error is outdated — case_preload VALUES are case properties being READ FROM, so reserved names like "case_name" ARE valid preload sources. If you see this error, the preload is likely fine. Focus on ensuring case_properties KEYS (write targets) don't use reserved words.
 
 ### "case property maps to a media/binary question"
 Media questions (image, audio, video, signature) cannot be saved as case properties — CommCare cannot store binary data in case properties. Remove the mapping.
@@ -74,7 +73,7 @@ The repeat_context must reference a question id of type "repeat" in the form. Fi
 ## Key Rules
 - Use "text" with "readonly": true for display-only preloaded fields, NOT "trigger"
 - Labels should be clear and professional (e.g. "Patient Name", not "Patient Name (loaded from case)")
-- NEVER use reserved words in case_properties keys OR case_preload values
-- Reserved words: case_id, case_name, case_type, closed, closed_by, closed_on, date, date_modified, date_opened, doc_type, domain, external_id, index, indices, modified_on, name, opened_by, opened_on, owner_id, server_modified_on, status, type, user_id, xform_id
+- NEVER use reserved words in case_properties keys (case_preload values ARE allowed to be reserved — they read FROM the case)
+- Reserved words: actions, case_id, case_name, case_type, case_type_id, closed, closed_by, closed_on, commtrack, computed_, computed_modified_on_, create, date, date_modified, date-opened, date_opened, doc_type, domain, external-id, external_id, index, indices, initial_processing_complete, last_modified, modified_by, modified_on, name, opened_by, opened_on, owner_id, parent, referrals, server_modified_on, server_opened_on, status, type, user_id, userid, version, xform_id, xform_ids
 
 Call the submit_app_definition tool with the corrected app definition.`

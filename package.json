@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
+    "@xmldom/xmldom": "^0.8.11",
     "adm-zip": "^0.5.16",
     "electron-store": "^8.2.0",
     "electron-updater": "^6.8.3",

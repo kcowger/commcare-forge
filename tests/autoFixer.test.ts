@@ -51,7 +51,7 @@ describe('AutoFixer', () => {
     expect(fixed).toContain("jr:itext('color-red-label')")
   })
 
-  it('renames reserved case property names', () => {
+  it('does not modify reserved words in XForm (handled by expander now)', () => {
     const xform = makeXForm(
       `    <input ref="/data/name">\n      <label ref="jr:itext('name-label')"/>\n    </input>`,
       {
@@ -62,9 +62,9 @@ describe('AutoFixer', () => {
     )
     const { files, fixes } = fixer.fix({ 'modules-0/forms-0.xml': xform })
     const fixed = files['modules-0/forms-0.xml']
-    expect(fixed).toContain('visit_date')
-    expect(fixed).toContain('nodeset="/data/case/update/visit_date"')
-    expect(fixes).toContainEqual(expect.stringContaining('Renamed'))
+    // Reserved word renaming is now handled by hqJsonExpander, not autoFixer
+    expect(fixed).toBe(xform)
+    expect(fixes).toEqual([])
   })
 
   it('adds missing case create binds', () => {

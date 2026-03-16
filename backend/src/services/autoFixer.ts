@@ -4,29 +4,7 @@
  * so the validator ideally passes on the first attempt.
  */
 
-const RESERVED_CASE_PROPERTIES = new Set([
-  'actions', 'case_id', 'case_name', 'case_type', 'case_type_id',
-  'create', 'closed', 'closed_by', 'closed_on', 'commtrack',
-  'computed_', 'computed_modified_on_', 'date', 'date_modified',
-  'date-opened', 'date_opened', 'doc_type', 'domain',
-  'external-id', 'index', 'indices', 'initial_processing_complete',
-  'last_modified', 'modified_on', 'modified_by', 'opened_by', 'opened_on',
-  'parent', 'referrals', 'server_modified_on', 'server_opened_on',
-  'status', 'type', 'user_id', 'userid', 'version', 'xform_id', 'xform_ids'
-])
-
-const RESERVED_RENAME_MAP: Record<string, string> = {
-  date: 'visit_date',
-  status: 'case_status',
-  type: 'case_category',
-  parent: 'parent_case',
-  index: 'case_index',
-  version: 'form_version',
-  domain: 'case_domain',
-  closed: 'is_closed',
-  actions: 'case_actions',
-  create: 'create_info'
-}
+import { VALIDATION_PATTERNS } from '../constants/commcareConfig'
 
 export class AutoFixer {
   /**
@@ -75,21 +53,14 @@ export class AutoFixer {
       applied.push(...itextResult.applied)
     }
 
-    // 2. Fix reserved case property names
-    const reservedResult = this.fixReservedProperties(path, result)
-    if (reservedResult.changed) {
-      result = reservedResult.xml
-      applied.push(...reservedResult.applied)
-    }
-
-    // 3. Fix missing case create binds
+    // 2. Fix missing case create binds
     const createResult = this.fixMissingCreateBinds(path, result)
     if (createResult.changed) {
       result = createResult.xml
       applied.push(...createResult.applied)
     }
 
-    // 4. Fix missing case update binds
+    // 3. Fix missing case update binds
     const updateResult = this.fixMissingUpdateBinds(path, result)
     if (updateResult.changed) {
       result = updateResult.xml
@@ -296,44 +267,7 @@ export class AutoFixer {
   }
 
   // -------------------------------------------------------------------
-  // 2. Reserved property name fixer
-  // -------------------------------------------------------------------
-
-  private fixReservedProperties(path: string, xml: string): { xml: string; changed: boolean; applied: string[] } {
-    const applied: string[] = []
-    let result = xml
-    let changed = false
-
-    // Find update properties that use reserved names
-    const updateBlocks = xml.match(/<update>([\s\S]*?)<\/update>/g)
-    if (!updateBlocks) return { xml, changed: false, applied }
-
-    for (const block of updateBlocks) {
-      const childTags = [...block.matchAll(/<(\w+)\s*\/?>/g)]
-      for (const tagMatch of childTags) {
-        const prop = tagMatch[1]
-        if (prop === 'update') continue
-        if (RESERVED_CASE_PROPERTIES.has(prop.toLowerCase())) {
-          const newName = RESERVED_RENAME_MAP[prop.toLowerCase()] || `${prop}_value`
-          // Replace in instance data
-          result = result.replace(new RegExp(`(<update>[\\s\\S]*?)<${prop}\\s*/?>`, 'g'), `$1<${newName}/>`)
-          result = result.replace(new RegExp(`</${prop}>`, 'g'), `</${newName}>`)
-          // Replace in binds
-          result = result.replace(
-            new RegExp(`nodeset="/data/case/update/${prop}"`, 'g'),
-            `nodeset="/data/case/update/${newName}"`
-          )
-          applied.push(`${path}: Renamed reserved case property "${prop}" to "${newName}"`)
-          changed = true
-        }
-      }
-    }
-
-    return { xml: result, changed, applied }
-  }
-
-  // -------------------------------------------------------------------
-  // 3. Missing case create bind fixer
+  // 2. Missing case create bind fixer
   // -------------------------------------------------------------------
 
   private fixMissingCreateBinds(path: string, xml: string): { xml: string; changed: boolean; applied: string[] } {
@@ -380,7 +314,7 @@ export class AutoFixer {
   }
 
   // -------------------------------------------------------------------
-  // 4. Missing case update bind fixer
+  // 3. Missing case update bind fixer
   // -------------------------------------------------------------------
 
   private fixMissingUpdateBinds(path: string, xml: string): { xml: string; changed: boolean; applied: string[] } {
@@ -415,7 +349,7 @@ export class AutoFixer {
   }
 
   // -------------------------------------------------------------------
-  // 5. app_strings.txt fixer
+  // 4. app_strings.txt fixer
   // -------------------------------------------------------------------
 
   private fixAppStrings(suiteXml: string, appStrings: string): { content: string; applied: string[] } {
@@ -457,17 +391,17 @@ export class AutoFixer {
 
   /** Check if a string is a valid CommCare case type identifier */
   private isValidCaseType(ct: string): boolean {
-    return /^[a-zA-Z][a-zA-Z0-9_-]*$/.test(ct)
+    return VALIDATION_PATTERNS.CASE_TYPE_STRICT.test(ct)
   }
 
   /** Check if a string is a valid XForm data path */
   private isValidXFormPath(p: string): boolean {
-    return /^\/data\/[a-zA-Z0-9_/]+$/.test(p)
+    return VALIDATION_PATTERNS.XFORM_PATH.test(p)
   }
 
   /** Check if a string is a valid XML element / case property name */
   private isValidPropertyName(name: string): boolean {
-    return /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)
+    return VALIDATION_PATTERNS.XML_ELEMENT_NAME.test(name)
   }
 
   private escapeXml(str: string): string {

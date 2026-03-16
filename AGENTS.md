@@ -57,7 +57,7 @@ npm run dist    # Create platform installers
 - **Compact format**: Claude outputs a small JSON with just app structure (modules, forms, questions, case properties). The expander adds all XForm XML, suite.xml, binds, itext, etc. This is critical for reliability.
 - **Structured output via tool use**: Generation and fixing use `tool_choice` to force Claude to return structured JSON matching the Zod schema, eliminating the need for text parsing or JSON repair.
 - **Zod as single source of truth**: The compact JSON structure is defined once in the Zod schema (`backend/src/schemas/compactApp.ts`). TypeScript types are derived via `z.infer`. The schema's `.describe()` strings serve as LLM guidance in tool definitions.
-- **Reserved case properties**: HQ rejects a specific set of reserved words in `case_properties` keys AND `case_preload` values. The expander silently filters them; the validator catches them for the fix loop.
+- **Reserved case properties**: HQ rejects a specific set of reserved words in `case_properties` keys. The expander silently filters them; the validator catches them for the fix loop. Note: `case_preload` values (reading FROM case) CAN use reserved names like `case_name`.
 - **PDF splitting**: Claude API has a 100-page PDF limit. Large PDFs are automatically split into chunks using pdf-lib.
 - **API key security**: Stored in electron-store with encryption, only accessed in the main process, never sent to the renderer.
 

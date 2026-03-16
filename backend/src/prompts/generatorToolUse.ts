@@ -60,11 +60,11 @@ Recognize these patterns:
 - If multiple child entries are needed in one form submission, use a repeat group with repeat_context
 - Use "extension" relationship only when the child must prevent the parent from closing (e.g., active pregnancy prevents closing the mother case)
 
-## RESERVED Case Property Names — NEVER use these as keys in case_properties or values in case_preload:
-case_id, case_name, case_type, closed, closed_by, closed_on, date, date_modified, date_opened, doc_type, domain, external_id, index, indices, modified_on, name, opened_by, opened_on, owner_id, server_modified_on, status, type, user_id, xform_id
+## RESERVED Case Property Names — NEVER use these as keys in case_properties:
+actions, case_id, case_name, case_type, case_type_id, closed, closed_by, closed_on, commtrack, computed_, computed_modified_on_, create, date, date_modified, date-opened, date_opened, doc_type, domain, external-id, external_id, index, indices, initial_processing_complete, last_modified, modified_by, modified_on, name, opened_by, opened_on, owner_id, parent, referrals, server_modified_on, server_opened_on, status, type, user_id, userid, version, xform_id, xform_ids
 
 Use descriptive alternatives: visit_date, patient_type, case_status, full_name, etc.
-Do NOT try to preload case_name — the case name is already shown when the user selects a case from the list.
+Note: case_preload VALUES are case properties being READ FROM — reserved words like "case_name" ARE valid preload sources (e.g. displaying the case name in a readonly field).
 
 ## Rules
 1. Every module with registration or followup forms MUST have a case_type.
@@ -73,7 +73,7 @@ Do NOT try to preload case_name — the case name is already shown when the user
 4. Question ids must be unique within a form and use snake_case starting with a letter.
 5. select1/select questions MUST have at least 2 options.
 6. case_properties keys must NOT be reserved words. case_properties values must reference valid question ids.
-7. case_preload keys must reference valid question ids. case_preload values must NOT be reserved words (except "case_name" for reading the case name).
+7. case_preload keys must reference valid question ids. case_preload values are case property names to READ FROM — reserved names like "case_name" are valid preload sources.
 8. For followup forms, use real input fields (text, date, select1, etc.) for preloaded values — NOT triggers. Use readonly: true if you want a display-only field.
 9. Design forms that are genuinely useful. Every question should serve a purpose. Labels should be clear and professional.
 10. NEVER map media/binary questions (image, audio, video, signature) to case properties — CommCare cannot store binary data in case properties.

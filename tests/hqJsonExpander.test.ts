@@ -91,11 +91,16 @@ describe('validateCompact', () => {
     expect(errors).toContainEqual(expect.stringContaining("doesn't match"))
   })
 
-  it('errors on reserved word in case_properties', () => {
+  it('auto-renames reserved words in case_properties (no error)', () => {
     const app = minimalApp()
     app.modules[0].forms[0].case_properties = { date: 'age' }
     const errors = validateCompact(app)
-    expect(errors).toContainEqual(expect.stringContaining('reserved'))
+    expect(errors).toEqual([])
+    // Verify the reserved word gets renamed during expansion
+    const hq = expandToHqJson(app)
+    const update = hq.modules[0].forms[0].actions.update_case.update
+    expect(update).not.toHaveProperty('date')
+    expect(update).toHaveProperty('visit_date') // RESERVED_RENAME_MAP: date -> visit_date
   })
 
   it('errors on case_properties mapping to nonexistent question', () => {
@@ -123,11 +128,11 @@ describe('validateCompact', () => {
     expect(errors).toEqual([])
   })
 
-  it('errors on reserved word in case_list_columns', () => {
+  it('allows reserved words in case_list_columns (detail columns read case data)', () => {
     const app = minimalApp()
     app.modules[0].case_list_columns = [{ field: 'status', header: 'Status' }]
     const errors = validateCompact(app)
-    expect(errors).toContainEqual(expect.stringContaining('reserved'))
+    expect(errors).toEqual([])
   })
 
 })
@@ -301,13 +306,46 @@ describe('expandToHqJson', () => {
     expect(actions.case_preload.preload['/data/info_group/preloaded_name']).toBe('patient_name')
   })
 
-  it('filters reserved words from case_properties', () => {
+  it('auto-renames reserved words in case_properties during expansion', () => {
     const app = minimalApp()
     app.modules[0].forms[0].case_properties = { date: 'age', visit_age: 'age' }
     const hq = expandToHqJson(app)
     const update = hq.modules[0].forms[0].actions.update_case.update
-    expect(update.date).toBeUndefined()
-    expect(update.visit_age).toBeDefined()
+    expect(update.date).toBeUndefined() // reserved word removed
+    expect(update.visit_date).toBeDefined() // renamed via RESERVED_RENAME_MAP
+    expect(update.visit_age).toBeDefined() // non-reserved kept as-is
+  })
+
+  it('auto-renames case_name in case_properties to avoid HQ rejection', () => {
+    const app: CompactApp = {
+      app_name: 'Test',
+      modules: [{
+        name: 'Water Points',
+        case_type: 'water_point',
+        forms: [{
+          name: 'Verification Survey',
+          type: 'followup',
+          case_properties: { case_name: 'water_point_name', status: 'verification_status' },
+          case_preload: { water_point_name: 'case_name' },
+          questions: [
+            { id: 'water_point_name', type: 'text', label: 'Water Point Name' },
+            { id: 'verification_status', type: 'select1', label: 'Status', options: [{value:'ok',label:'OK'},{value:'bad',label:'Bad'}] }
+          ]
+        }]
+      }]
+    }
+    const hq = expandToHqJson(app)
+    const update = hq.modules[0].forms[0].actions.update_case.update
+    // case_name must NOT appear as a key — HQ will reject it
+    expect(update.case_name).toBeUndefined()
+    // status must be renamed too
+    expect(update.status).toBeUndefined()
+    expect(update.case_status).toBeDefined()
+    // All update keys must be non-reserved
+    for (const key of Object.keys(update)) {
+      expect(key).not.toBe('case_name')
+      expect(key).not.toBe('status')
+    }
   })
 
   it('always includes case_name as first column in case details', () => {
@@ -756,7 +794,7 @@ describe('expandToHqJson', () => {
     expect(errors).toContainEqual(expect.stringContaining("doesn't match"))
   })
 
-  it('errors on child_cases with reserved property name', () => {
+  it('auto-renames reserved words in child_cases case_properties (no error)', () => {
     const app: CompactApp = {
       app_name: 'Test',
       modules: [{
@@ -771,7 +809,12 @@ describe('expandToHqJson', () => {
       }]
     }
     const errors = validateCompact(app)
-    expect(errors).toContainEqual(expect.stringContaining('reserved'))
+    expect(errors).toEqual([])
+    // Verify rename during expansion
+    const hq = expandToHqJson(app)
+    const subcase = hq.modules[0].forms[0].actions.subcases[0]
+    expect(subcase.case_properties).not.toHaveProperty('status')
+    expect(subcase.case_properties).toHaveProperty('case_status') // RESERVED_RENAME_MAP: status -> case_status
   })
 
   it('errors on child_cases repeat_context pointing to non-repeat question', () => {
@@ -989,5 +1032,325 @@ describe('expandToHqJson — child_cases', () => {
     }
     const hq = expandToHqJson(app)
     expect(hq.modules[0].forms[0].actions.subcases).toEqual([])
+  })
+
+  // --- Form links ---
+
+  it('resolves form_links by name to unique_id', () => {
+    const app: CompactApp = {
+      app_name: 'Test',
+      modules: [{
+        name: 'Mod',
+        case_type: 'patient',
+        forms: [
+          {
+            name: 'Register',
+            type: 'registration',
+            case_name_field: 'name',
+            form_links: [{ form_name: 'Follow Up' }],
+            questions: [{ id: 'name', type: 'text', label: 'Name' }]
+          },
+          {
+            name: 'Follow Up',
+            type: 'followup',
+            questions: [{ id: 'q', type: 'text', label: 'Q' }]
+          }
+        ]
+      }]
+    }
+    const hq = expandToHqJson(app)
+    const regForm = hq.modules[0].forms[0]
+    expect(regForm.post_form_workflow).toBe('form')
+    expect(regForm.form_links).toHaveLength(1)
+    expect(regForm.form_links[0].doc_type).toBe('FormLink')
+    expect(regForm.form_links[0].xpath).toBe('true()')
+    // Should resolve to the unique_id of the "Follow Up" form
+    expect(regForm.form_links[0].form_id).toBe(hq.modules[0].forms[1].unique_id)
+  })
+
+  it('validates form_links referencing nonexistent form', () => {
+    const app: CompactApp = {
+      app_name: 'Test',
+      modules: [{
+        name: 'Mod',
+        forms: [{
+          name: 'Survey',
+          type: 'survey',
+          form_links: [{ form_name: 'Nonexistent Form' }],
+          questions: [{ id: 'q', type: 'text', label: 'Q' }]
+        }]
+      }]
+    }
+    const errors = validateCompact(app)
+    expect(errors.some(e => e.includes('Nonexistent Form'))).toBe(true)
+  })
+})
+
+// --- Multi-language / i18n ---
+
+describe('multi-language support', () => {
+  function multiLangApp(): CompactApp {
+    return {
+      app_name: 'Multi-Lang App',
+      languages: [
+        { code: 'en', label: 'English', default: true },
+        { code: 'fr', label: 'French' },
+      ],
+      modules: [{
+        name: 'Registration',
+        case_type: 'patient',
+        forms: [{
+          name: 'Register',
+          type: 'registration',
+          case_name_field: 'name',
+          questions: [
+            {
+              id: 'name',
+              type: 'text',
+              label: 'Name',
+              labels_by_language: { en: 'Name', fr: 'Nom' },
+              hint: 'Enter name',
+              hints_by_language: { en: 'Enter name', fr: 'Entrez le nom' },
+            },
+            {
+              id: 'gender',
+              type: 'select1',
+              label: 'Gender',
+              labels_by_language: { en: 'Gender', fr: 'Genre' },
+              options: [
+                { value: 'male', label: 'Male', labels_by_language: { en: 'Male', fr: 'Homme' } },
+                { value: 'female', label: 'Female', labels_by_language: { en: 'Female', fr: 'Femme' } },
+              ],
+            },
+          ]
+        }]
+      }]
+    }
+  }
+
+  it('sets langs array on HQ JSON', () => {
+    const hq = expandToHqJson(multiLangApp())
+    expect(hq.langs).toEqual(['en', 'fr'])
+  })
+
+  it('generates multi-lang module and form names', () => {
+    const hq = expandToHqJson(multiLangApp())
+    expect(hq.modules[0].name).toEqual({ en: 'Registration', fr: 'Registration' })
+    expect(hq.modules[0].forms[0].name).toEqual({ en: 'Register', fr: 'Register' })
+  })
+
+  it('generates per-language itext translations in XForm', () => {
+    const hq = expandToHqJson(multiLangApp())
+    const xform = Object.values(hq._attachments)[0] as string
+    expect(xform).toContain('<translation lang="en" default="">')
+    expect(xform).toContain('<translation lang="fr">')
+  })
+
+  it('uses labels_by_language for translated label itext', () => {
+    const hq = expandToHqJson(multiLangApp())
+    const xform = Object.values(hq._attachments)[0] as string
+    // French translation for the "name" question
+    expect(xform).toContain('<text id="name-label"><value>Nom</value></text>')
+    // French translation for gender select options
+    expect(xform).toContain('<text id="gender-male-label"><value>Homme</value></text>')
+    expect(xform).toContain('<text id="gender-female-label"><value>Femme</value></text>')
+  })
+
+  it('uses hints_by_language for translated hint itext', () => {
+    const hq = expandToHqJson(multiLangApp())
+    const xform = Object.values(hq._attachments)[0] as string
+    expect(xform).toContain('<text id="name-hint"><value>Entrez le nom</value></text>')
+  })
+
+  it('falls back to default label when language translation missing', () => {
+    const app: CompactApp = {
+      app_name: 'Test',
+      languages: [
+        { code: 'en', label: 'English', default: true },
+        { code: 'sw', label: 'Swahili' },
+      ],
+      modules: [{
+        name: 'Mod',
+        forms: [{
+          name: 'Form',
+          type: 'survey',
+          questions: [{
+            id: 'q1',
+            type: 'text',
+            label: 'Question One',
+            // No labels_by_language for sw — should fall back to label
+          }]
+        }]
+      }]
+    }
+    const hq = expandToHqJson(app)
+    const xform = Object.values(hq._attachments)[0] as string
+    // Both languages should have the fallback label
+    expect(xform).toContain('<translation lang="en" default="">')
+    expect(xform).toContain('<translation lang="sw">')
+    // Swahili should fall back to the default label
+    const swSection = xform.split('<translation lang="sw">')[1]?.split('</translation>')[0]
+    expect(swSection).toContain('<text id="q1-label"><value>Question One</value></text>')
+  })
+
+  it('defaults to single en language when languages not specified', () => {
+    const app = minimalApp()
+    const hq = expandToHqJson(app)
+    expect(hq.langs).toEqual(['en'])
+    const xform = Object.values(hq._attachments)[0] as string
+    expect(xform).toContain('<translation lang="en" default="">')
+    // Should not have any other translation blocks
+    const translationCount = (xform.match(/<translation /g) || []).length
+    expect(translationCount).toBe(1)
+  })
+
+  it('generates multi-lang detail column headers', () => {
+    const app = multiLangApp()
+    const hq = expandToHqJson(app)
+    const nameCol = hq.modules[0].case_details.short.columns[0]
+    expect(nameCol.header).toEqual({ en: 'Name', fr: 'Name' })
+  })
+})
+
+// --- Lookup Tables ---
+
+describe('lookup tables', () => {
+  function lookupTableApp(): CompactApp {
+    return {
+      app_name: 'Lookup Test',
+      lookup_tables: [{
+        tag: 'facilities',
+        fields: [
+          { field_name: 'id', label: 'ID' },
+          { field_name: 'name', label: 'Facility Name' },
+        ],
+        data: [
+          { id: 'f1', name: 'Clinic A' },
+          { id: 'f2', name: 'Hospital B' },
+        ],
+      }],
+      modules: [{
+        name: 'Visit',
+        forms: [{
+          name: 'Record Visit',
+          type: 'survey',
+          questions: [
+            {
+              id: 'facility',
+              type: 'select1',
+              label: 'Select Facility',
+              lookup_table: { tag: 'facilities', value_field: 'id', label_field: 'name' },
+              options: [
+                { value: 'placeholder', label: 'Placeholder' },
+                { value: 'placeholder2', label: 'Placeholder2' },
+              ],
+            },
+            { id: 'notes', type: 'text', label: 'Notes' },
+          ]
+        }]
+      }]
+    }
+  }
+
+  it('generates fixture XML in _attachments', () => {
+    const hq = expandToHqJson(lookupTableApp())
+    const fixtureXml = hq._attachments['fixture:facilities']
+    expect(fixtureXml).toBeDefined()
+    expect(fixtureXml).toContain('<fixture id="item-list:facilities"')
+    expect(fixtureXml).toContain('<facilities_list>')
+    expect(fixtureXml).toContain('<item>')
+    expect(fixtureXml).toContain('<id>f1</id>')
+    expect(fixtureXml).toContain('<name>Clinic A</name>')
+    expect(fixtureXml).toContain('<name>Hospital B</name>')
+  })
+
+  it('generates itemset in XForm instead of static items', () => {
+    const hq = expandToHqJson(lookupTableApp())
+    const xform = Object.entries(hq._attachments).find(([k]) => k.endsWith('.xml') && !k.startsWith('fixture:'))![1] as string
+    expect(xform).toContain('<itemset nodeset="instance(\'facilities\')//facilities_list/item">')
+    expect(xform).toContain('<value ref="id"/>')
+    expect(xform).toContain('<label ref="name"/>')
+    // Should NOT contain static items for the lookup question
+    expect(xform).not.toContain('placeholder')
+  })
+
+  it('includes fixture instance declaration in XForm', () => {
+    const hq = expandToHqJson(lookupTableApp())
+    const xform = Object.entries(hq._attachments).find(([k]) => k.endsWith('.xml') && !k.startsWith('fixture:'))![1] as string
+    expect(xform).toContain('<instance id="facilities" src="jr://fixture/item-list:facilities"/>')
+  })
+
+  it('validates lookup_table references nonexistent tag', () => {
+    const app: CompactApp = {
+      app_name: 'Test',
+      lookup_tables: [{
+        tag: 'districts',
+        fields: [{ field_name: 'code', label: 'Code' }],
+        data: [{ code: 'd1' }],
+      }],
+      modules: [{
+        name: 'Mod',
+        forms: [{
+          name: 'Form',
+          type: 'survey',
+          questions: [{
+            id: 'q1',
+            type: 'select1',
+            label: 'Q',
+            lookup_table: { tag: 'nonexistent', value_field: 'code', label_field: 'name' },
+            options: [{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }],
+          }]
+        }]
+      }]
+    }
+    const errors = validateCompact(app)
+    expect(errors.some(e => e.includes('nonexistent') && e.includes('doesn\'t exist'))).toBe(true)
+  })
+
+  it('validates duplicate lookup table tags', () => {
+    const app: CompactApp = {
+      app_name: 'Test',
+      lookup_tables: [
+        { tag: 'items', fields: [{ field_name: 'id', label: 'ID' }], data: [{ id: '1' }] },
+        { tag: 'items', fields: [{ field_name: 'id', label: 'ID' }], data: [{ id: '2' }] },
+      ],
+      modules: [{
+        name: 'Mod',
+        forms: [{
+          name: 'Form',
+          type: 'survey',
+          questions: [{ id: 'q1', type: 'text', label: 'Q' }]
+        }]
+      }]
+    }
+    const errors = validateCompact(app)
+    expect(errors.some(e => e.includes('Duplicate lookup table tag'))).toBe(true)
+  })
+
+  it('validates lookup_table field references', () => {
+    const app: CompactApp = {
+      app_name: 'Test',
+      lookup_tables: [{
+        tag: 'items',
+        fields: [{ field_name: 'code', label: 'Code' }, { field_name: 'label', label: 'Label' }],
+        data: [{ code: '1', label: 'One' }],
+      }],
+      modules: [{
+        name: 'Mod',
+        forms: [{
+          name: 'Form',
+          type: 'survey',
+          questions: [{
+            id: 'q1',
+            type: 'select1',
+            label: 'Q',
+            lookup_table: { tag: 'items', value_field: 'bad_field', label_field: 'label' },
+            options: [{ value: 'a', label: 'A' }, { value: 'b', label: 'B' }],
+          }]
+        }]
+      }]
+    }
+    const errors = validateCompact(app)
+    expect(errors.some(e => e.includes('bad_field') && e.includes('doesn\'t match'))).toBe(true)
   })
 })

@@ -1,24 +1,9 @@
 import type { ValidationResult } from '../types'
-
-// Reserved case property names from CommCare HQ
-// Source: commcare-hq/corehq/apps/app_manager/static/app_manager/json/case-reserved-words.json
-const RESERVED_CASE_PROPERTIES = new Set([
-  'actions', 'case_id', 'case_name', 'case_type', 'case_type_id',
-  'create', 'closed', 'closed_by', 'closed_on', 'commtrack',
-  'computed_', 'computed_modified_on_', 'date', 'date_modified',
-  'date-opened', 'date_opened', 'doc_type', 'domain',
-  'external-id', 'index', 'indices', 'initial_processing_complete',
-  'last_modified', 'modified_on', 'modified_by', 'opened_by', 'opened_on',
-  'parent', 'referrals', 'server_modified_on', 'server_opened_on',
-  'status', 'type', 'user_id', 'userid', 'version', 'xform_id', 'xform_ids'
-])
-
-// HQ regex for valid case property names
-const CASE_PROPERTY_REGEX = /^[a-zA-Z][\w_-]*$/
-// HQ regex for valid case type names
-const CASE_TYPE_REGEX = /^[\w-]+$/
-// Standard create block properties (not case properties)
-const STANDARD_CREATE_PROPS = new Set(['case_type', 'case_name', 'owner_id'])
+import { RESERVED_CASE_PROPERTIES } from '../constants/reservedCaseProperties'
+import {
+  DOC_TYPES, VALIDATION_PATTERNS, STANDARD_CREATE_PROPS,
+  MODULE_TYPES, FORM_TYPES, REQUIRES_VALUES,
+} from '../constants/commcareConfig'
 
 export class HqValidator {
   /**
@@ -78,7 +63,7 @@ export class HqValidator {
 
     // C. Case property name format
     for (const prop of caseUpdateProps) {
-      if (!CASE_PROPERTY_REGEX.test(prop)) {
+      if (!VALIDATION_PATTERNS.CASE_PROPERTY.test(prop)) {
         errors.push(`Invalid case property name "${prop}" in ${filePath}. Must start with a letter and contain only letters, digits, underscores, or hyphens.`)
       }
     }
@@ -86,7 +71,7 @@ export class HqValidator {
     // D. Case type format
     const caseTypes = this.extractCaseTypes(content)
     for (const ct of caseTypes) {
-      if (!CASE_TYPE_REGEX.test(ct)) {
+      if (!VALIDATION_PATTERNS.CASE_TYPE.test(ct)) {
         errors.push(`Invalid case type "${ct}" in ${filePath}. Case types can only contain letters, digits, underscores, and hyphens.`)
       }
     }
@@ -533,5 +518,235 @@ export class HqValidator {
       ids.add(m[1])
     }
     return ids
+  }
+
+  // =====================================================================
+  // HQ JSON Structure Validation
+  // =====================================================================
+
+  /**
+   * Validates the HQ import JSON structure — doc_types, required fields, field values,
+   * and HQ-specific rules that operate on the JSON (not XForm XML).
+   */
+  validateHqJsonStructure(hqJson: Record<string, any>): ValidationResult {
+    const errors: string[] = []
+
+    // --- Application level ---
+    this.expectField(errors, hqJson, 'doc_type', DOC_TYPES.Application, 'Application')
+    this.expectRequired(errors, hqJson, ['name', 'langs', 'modules', '_attachments'], 'Application')
+    if (!Array.isArray(hqJson.modules)) {
+      errors.push('Application.modules must be an array')
+      return this.result(errors)
+    }
+    if (hqJson.modules.length === 0) {
+      errors.push('Application has no modules (HQ rule 1.2)')
+    }
+    if (!Array.isArray(hqJson.langs) || hqJson.langs.length === 0) {
+      errors.push('Application.langs must be a non-empty array')
+    }
+
+    const modules = hqJson.modules
+
+    // --- Module level ---
+    for (let mIdx = 0; mIdx < modules.length; mIdx++) {
+      const mod = modules[mIdx]
+      const mc = `modules[${mIdx}]`
+
+      this.expectField(errors, mod, 'doc_type', DOC_TYPES.Module, mc)
+      this.expectRequired(errors, mod, ['unique_id', 'name', 'forms', 'case_details'], mc)
+      this.expectEnum(errors, mod, 'module_type', [...MODULE_TYPES], mc)
+
+      // Case details structure
+      if (mod.case_details) {
+        this.expectField(errors, mod.case_details, 'doc_type', DOC_TYPES.DetailPair, `${mc}.case_details`)
+        if (mod.case_details.short) {
+          this.expectField(errors, mod.case_details.short, 'doc_type', DOC_TYPES.Detail, `${mc}.case_details.short`)
+        }
+        if (mod.case_details.long) {
+          this.expectField(errors, mod.case_details.long, 'doc_type', DOC_TYPES.Detail, `${mc}.case_details.long`)
+        }
+      }
+
+      // Rule 2.2: Modules with case-requiring forms must have detail columns
+      const hasCaseForm = (mod.forms || []).some((f: any) => f.requires === 'case')
+      if (hasCaseForm && mod.case_type) {
+        const shortCols = mod.case_details?.short?.columns || []
+        if (shortCols.length === 0) {
+          errors.push(`${mc} "${mod.name?.en}": Module requires cases but has no case detail columns. HQ requires at least one.`)
+        }
+      }
+
+      // Detail column field regex
+      for (const col of (mod.case_details?.short?.columns || [])) {
+        if (col.field && !VALIDATION_PATTERNS.DETAIL_FIELD.test(col.field)) {
+          errors.push(`${mc}: Case detail column field "${col.field}" doesn't match HQ's required pattern.`)
+        }
+      }
+
+      // --- Form level ---
+      for (let fIdx = 0; fIdx < (mod.forms || []).length; fIdx++) {
+        const form = mod.forms[fIdx]
+        const fc = `${mc}.forms[${fIdx}]`
+
+        this.expectField(errors, form, 'doc_type', DOC_TYPES.Form, fc)
+        this.expectRequired(errors, form, ['unique_id', 'xmlns', 'name', 'actions'], fc)
+        this.expectEnum(errors, form, 'form_type', [...FORM_TYPES], fc)
+        this.expectEnum(errors, form, 'requires', [...REQUIRES_VALUES], fc)
+
+        // Attachment must exist
+        if (form.unique_id && hqJson._attachments) {
+          const key = `${form.unique_id}.xml`
+          if (!hqJson._attachments[key]) {
+            errors.push(`${fc}: Missing XForm attachment "${key}" in _attachments`)
+          }
+        }
+
+        // --- Actions structure ---
+        const actions = form.actions
+        if (!actions) continue
+
+        this.expectField(errors, actions, 'doc_type', DOC_TYPES.FormActions, `${fc}.actions`)
+
+        if (actions.open_case) {
+          this.expectField(errors, actions.open_case, 'doc_type', DOC_TYPES.OpenCaseAction, `${fc}.actions.open_case`)
+          this.checkCondition(errors, actions.open_case.condition, `${fc}.actions.open_case.condition`)
+        }
+        if (actions.update_case) {
+          this.expectField(errors, actions.update_case, 'doc_type', DOC_TYPES.UpdateCaseAction, `${fc}.actions.update_case`)
+          this.checkCondition(errors, actions.update_case.condition, `${fc}.actions.update_case.condition`)
+
+          // Check update_case keys for reserved words
+          if (actions.update_case.update) {
+            for (const key of Object.keys(actions.update_case.update)) {
+              if (RESERVED_CASE_PROPERTIES.has(key.toLowerCase())) {
+                errors.push(`${fc}: update_case uses reserved property "${key}". HQ will reject this.`)
+              }
+            }
+          }
+        }
+        if (actions.close_case) {
+          this.expectField(errors, actions.close_case, 'doc_type', DOC_TYPES.FormAction, `${fc}.actions.close_case`)
+          this.checkCondition(errors, actions.close_case.condition, `${fc}.actions.close_case.condition`)
+        }
+        if (actions.case_preload) {
+          this.expectField(errors, actions.case_preload, 'doc_type', DOC_TYPES.PreloadAction, `${fc}.actions.case_preload`)
+          this.checkCondition(errors, actions.case_preload.condition, `${fc}.actions.case_preload.condition`)
+        }
+
+        // Rule 5.6: Can't update a case without opening or requiring one
+        const opensCase = actions.open_case?.condition?.type === 'always'
+        const requiresCase = form.requires === 'case'
+        const updatesCase = actions.update_case?.condition?.type === 'always'
+        if (updatesCase && !opensCase && !requiresCase) {
+          errors.push(`${fc} "${form.name?.en}": Updates a case but neither opens nor requires one (HQ rule 5.6).`)
+        }
+
+        // Subcases
+        for (let sIdx = 0; sIdx < (actions.subcases || []).length; sIdx++) {
+          const sc = actions.subcases[sIdx]
+          const sCtx = `${fc}.actions.subcases[${sIdx}]`
+          this.expectField(errors, sc, 'doc_type', DOC_TYPES.OpenSubCaseAction, sCtx)
+          this.expectRequired(errors, sc, ['case_type', 'name_update', 'condition'], sCtx)
+          this.expectEnum(errors, sc, 'relationship', ['child', 'extension'], sCtx)
+          this.checkCondition(errors, sc.condition, `${sCtx}.condition`)
+
+          // Check subcase properties for reserved words
+          if (sc.case_properties) {
+            for (const key of Object.keys(sc.case_properties)) {
+              if (RESERVED_CASE_PROPERTIES.has(key.toLowerCase())) {
+                errors.push(`${sCtx}: uses reserved property "${key}". HQ will reject this.`)
+              }
+            }
+          }
+        }
+      }
+    }
+
+    return this.result(errors)
+  }
+
+  // =====================================================================
+  // CCZ File Validation
+  // =====================================================================
+
+  /**
+   * Validates the files that make up a .ccz package — suite.xml, profile, app_strings, XForms.
+   */
+  validateCczFiles(files: Record<string, string>): ValidationResult {
+    const errors: string[] = []
+
+    // suite.xml
+    const suiteXml = files['suite.xml']
+    if (!suiteXml) {
+      errors.push('CCZ missing suite.xml')
+    } else {
+      if (!suiteXml.includes('<suite')) errors.push('suite.xml missing <suite> root element')
+      if (!/<entry>/.test(suiteXml)) errors.push('suite.xml has no <entry> elements')
+      if (!/<menu\s/.test(suiteXml)) errors.push('suite.xml has no <menu> elements')
+      if (!/<locale\s/.test(suiteXml)) errors.push('suite.xml has no <locale> resource')
+    }
+
+    // profile.ccpr
+    const profile = files['profile.ccpr']
+    if (!profile) {
+      errors.push('CCZ missing profile.ccpr')
+    } else {
+      if (!profile.includes('uniqueid=')) errors.push('profile.ccpr missing uniqueid attribute')
+      if (!profile.includes('suite.xml')) errors.push('profile.ccpr does not reference suite.xml')
+    }
+
+    // app_strings.txt
+    const appStrings = files['default/app_strings.txt']
+    if (!appStrings) {
+      errors.push('CCZ missing default/app_strings.txt')
+    } else {
+      if (!appStrings.includes('app.name=')) errors.push('app_strings.txt missing app.name key')
+    }
+
+    // At least one XForm
+    const xformFiles = Object.keys(files).filter(k => k.startsWith('modules-') && k.endsWith('.xml'))
+    if (xformFiles.length === 0) {
+      errors.push('CCZ has no XForm files')
+    }
+
+    return this.result(errors)
+  }
+
+  // =====================================================================
+  // Helpers for structure validation
+  // =====================================================================
+
+  private result(errors: string[]): ValidationResult {
+    return { success: errors.length === 0, skipped: false, errors, stdout: '', stderr: '' }
+  }
+
+  private expectField(errors: string[], obj: any, field: string, expected: string, ctx: string) {
+    if (obj?.[field] !== expected) {
+      errors.push(`${ctx}.${field} should be "${expected}" but is "${obj?.[field]}"`)
+    }
+  }
+
+  private expectRequired(errors: string[], obj: any, fields: string[], ctx: string) {
+    for (const f of fields) {
+      if (obj?.[f] === undefined || obj?.[f] === null) {
+        errors.push(`${ctx} is missing required field "${f}"`)
+      }
+    }
+  }
+
+  private expectEnum(errors: string[], obj: any, field: string, valid: string[], ctx: string) {
+    if (obj?.[field] !== undefined && !valid.includes(obj[field])) {
+      errors.push(`${ctx}.${field} has invalid value "${obj[field]}". Valid: ${valid.join(', ')}`)
+    }
+  }
+
+  private checkCondition(errors: string[], cond: any, ctx: string) {
+    if (!cond) { errors.push(`${ctx} is missing`); return }
+    if (cond.doc_type !== DOC_TYPES.FormActionCondition) {
+      errors.push(`${ctx}.doc_type should be "${DOC_TYPES.FormActionCondition}" but is "${cond.doc_type}"`)
+    }
+    if (!['always', 'never', 'if'].includes(cond.type)) {
+      errors.push(`${ctx}.type has invalid value "${cond.type}". Valid: always, never, if`)
+    }
   }
 }

@@ -13,6 +13,7 @@ import { validateCompact, expandToHqJson } from '../../backend/src/services/hqJs
 import { AutoFixer } from '../../backend/src/services/autoFixer'
 import { HqValidator } from '../../backend/src/services/hqValidator'
 import { CczCompiler } from '../../backend/src/services/cczCompiler'
+import { CliValidator } from '../../backend/src/services/cliValidator'
 import { getCompactAppJsonSchema } from '../../backend/src/schemas/compactApp'
 import { mkdirSync, writeFileSync, copyFileSync } from 'fs'
 import { resolve } from 'path'
@@ -37,6 +38,7 @@ interface BuildResult {
   ccz_path?: string
   hq_json_path?: string
   errors?: string[]
+  warnings?: string[]
 }
 
 export async function handleValidate(input: ValidateInput): Promise<ValidateResult> {
@@ -48,12 +50,14 @@ export async function handleValidate(input: ValidateInput): Promise<ValidateResu
 }
 
 /**
- * Full build pipeline: validate → expand → auto-fix → validate HQ XML → compile .ccz.
- * Writes both the HQ JSON and .ccz to output_dir and returns their paths.
+ * Full build pipeline: validate → expand → auto-fix → validate HQ JSON structure →
+ * validate XForm XML → compile .ccz → validate CCZ files → CLI validation → write output.
  */
 export async function handleBuild(input: BuildInput): Promise<BuildResult> {
   try {
-    // 1. Validate first
+    const warnings: string[] = []
+
+    // 1. Validate compact JSON
     const validationErrors = validateCompact(input.compact_json)
     if (validationErrors.length > 0) {
       return { success: false, errors: validationErrors }
@@ -62,7 +66,7 @@ export async function handleBuild(input: BuildInput): Promise<BuildResult> {
     // 2. Expand to HQ JSON
     const hqJson = expandToHqJson(input.compact_json)
 
-    // 3. Auto-fix the expanded files
+    // 3. Auto-fix the expanded XForm files
     const autoFixer = new AutoFixer()
     const files: Record<string, string> = {}
     for (const [key, content] of Object.entries(hqJson._attachments || {})) {
@@ -73,8 +77,14 @@ export async function handleBuild(input: BuildInput): Promise<BuildResult> {
       hqJson._attachments[key] = content
     }
 
-    // 4. Validate the expanded HQ JSON
+    // 3b. Validate HQ JSON structure (doc_types, required fields, HQ rules)
     const hqValidator = new HqValidator()
+    const structureValidation = hqValidator.validateHqJsonStructure(hqJson)
+    if (!structureValidation.success) {
+      return { success: false, errors: structureValidation.errors }
+    }
+
+    // 4. Validate expanded XForm XML
     const hqValidation = hqValidator.validate(fixedFiles)
     if (!hqValidation.success) {
       return { success: false, errors: hqValidation.errors }
@@ -83,9 +93,24 @@ export async function handleBuild(input: BuildInput): Promise<BuildResult> {
     // 5. Compile to CCZ
     const compiler = new CczCompiler()
     const appName = input.compact_json.app_name
-    const cczTempPath = await compiler.compile(hqJson, appName)
+    const { cczPath: cczTempPath, files: cczFiles } = await compiler.compile(hqJson, appName)
 
-    // 6. Write output files
+    // 5b. Validate CCZ file structure (suite.xml, profile, app_strings)
+    const cczValidation = hqValidator.validateCczFiles(cczFiles)
+    if (!cczValidation.success) {
+      return { success: false, errors: cczValidation.errors }
+    }
+
+    // 6. CLI validation via CommCare Core engine (if Java available)
+    const cliValidator = new CliValidator()
+    const cliResult = await cliValidator.validate(cczTempPath)
+    if (cliResult.skipped) {
+      warnings.push(cliResult.skipReason || 'CLI validation skipped')
+    } else if (!cliResult.success) {
+      return { success: false, errors: cliResult.errors }
+    }
+
+    // 7. Write output files
     const outputDir = resolve(process.cwd(), input.output_dir || 'commcare-output')
     mkdirSync(outputDir, { recursive: true })
 
@@ -99,7 +124,8 @@ export async function handleBuild(input: BuildInput): Promise<BuildResult> {
     return {
       success: true,
       ccz_path: cczPath,
-      hq_json_path: hqJsonPath
+      hq_json_path: hqJsonPath,
+      warnings: warnings.length > 0 ? warnings : undefined
     }
   } catch (err) {
     return {

@@ -74,8 +74,7 @@ describe('validate_commcare_app', () => {
         }]
       }
     })
-    expect(result.valid).toBe(false)
-    expect(result.errors!.some(e => e.includes('reserved'))).toBe(true)
+    expect(result.valid).toBe(true) // reserved words are auto-renamed, not rejected
   })
 
   it('returns errors for registration form without case_name_field', async () => {
@@ -281,8 +280,7 @@ describe('build_commcare_app', () => {
         }]
       }
     })
-    expect(result.success).toBe(false)
-    expect(result.errors!.some(e => e.includes('reserved'))).toBe(true)
+    expect(result.success).toBe(true) // reserved words are auto-renamed, not rejected
   })
 
   it('builds a survey app without case management', async () => {

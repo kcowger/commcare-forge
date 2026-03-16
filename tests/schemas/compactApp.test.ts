@@ -191,4 +191,152 @@ describe('compactAppSchema', () => {
     expect(result.success).toBe(false)
   })
 
+  // --- Zod .refine() rule tests ---
+
+  it('rejects registration form without case_name_field', () => {
+    const result = compactAppSchema.safeParse({
+      app_name: 'Test',
+      modules: [{
+        name: 'Mod',
+        case_type: 'patient',
+        forms: [{
+          name: 'Register',
+          type: 'registration',
+          questions: [{ id: 'q', type: 'text', label: 'Q' }]
+        }]
+      }]
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects close_case on non-followup form', () => {
+    const result = compactAppSchema.safeParse({
+      app_name: 'Test',
+      modules: [{
+        name: 'Mod',
+        forms: [{
+          name: 'Survey',
+          type: 'survey',
+          close_case: true,
+          questions: [{ id: 'q', type: 'text', label: 'Q' }]
+        }]
+      }]
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects select1 with fewer than 2 options', () => {
+    const result = compactAppSchema.safeParse({
+      app_name: 'Test',
+      modules: [{
+        name: 'Mod',
+        forms: [{
+          name: 'Form',
+          type: 'survey',
+          questions: [{ id: 'q', type: 'select1', label: 'Q', options: [{ value: 'a', label: 'A' }] }]
+        }]
+      }]
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects select1 with no options', () => {
+    const result = compactAppSchema.safeParse({
+      app_name: 'Test',
+      modules: [{
+        name: 'Mod',
+        forms: [{
+          name: 'Form',
+          type: 'survey',
+          questions: [{ id: 'q', type: 'select1', label: 'Q' }]
+        }]
+      }]
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects hidden question without calculate', () => {
+    const result = compactAppSchema.safeParse({
+      app_name: 'Test',
+      modules: [{
+        name: 'Mod',
+        forms: [{
+          name: 'Form',
+          type: 'survey',
+          questions: [{ id: 'q', type: 'hidden', label: 'Q' }]
+        }]
+      }]
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('accepts hidden question with calculate', () => {
+    const result = compactAppSchema.safeParse({
+      app_name: 'Test',
+      modules: [{
+        name: 'Mod',
+        forms: [{
+          name: 'Form',
+          type: 'survey',
+          questions: [{ id: 'q', type: 'hidden', label: 'Q', calculate: "today()" }]
+        }]
+      }]
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('rejects group with no children', () => {
+    const result = compactAppSchema.safeParse({
+      app_name: 'Test',
+      modules: [{
+        name: 'Mod',
+        forms: [{
+          name: 'Form',
+          type: 'survey',
+          questions: [{ id: 'g', type: 'group', label: 'G' }]
+        }]
+      }]
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects invalid case_type format', () => {
+    const result = compactAppSchema.safeParse({
+      app_name: 'Test',
+      modules: [{
+        name: 'Mod',
+        case_type: 'has spaces!',
+        forms: [{
+          name: 'Form',
+          type: 'survey',
+          questions: [{ id: 'q', type: 'text', label: 'Q' }]
+        }]
+      }]
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects empty modules array', () => {
+    const result = compactAppSchema.safeParse({
+      app_name: 'Test',
+      modules: []
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects form with empty questions array', () => {
+    const result = compactAppSchema.safeParse({
+      app_name: 'Test',
+      modules: [{
+        name: 'Mod',
+        forms: [{
+          name: 'Form',
+          type: 'survey',
+          questions: []
+        }]
+      }]
+    })
+    expect(result.success).toBe(false)
+  })
+
 })

@@ -51,7 +51,7 @@ function minimalHqJson() {
 
 describe('CczCompiler', () => {
   it('produces a valid CCZ file', async () => {
-    const cczPath = await compiler.compile(minimalHqJson(), 'Test App')
+    const { cczPath } = await compiler.compile(minimalHqJson(), 'Test App')
     expect(existsSync(cczPath)).toBe(true)
     expect(cczPath).toContain('.ccz')
     // Verify it's a valid zip
@@ -63,7 +63,7 @@ describe('CczCompiler', () => {
   })
 
   it('generates profile.ccpr with correct app name', async () => {
-    const cczPath = await compiler.compile(minimalHqJson(), 'My App')
+    const { cczPath } = await compiler.compile(minimalHqJson(), 'My App')
     const zip = new AdmZip(cczPath)
     const profile = zip.readAsText('profile.ccpr')
     expect(profile).toContain('name="My App"')
@@ -72,7 +72,7 @@ describe('CczCompiler', () => {
   })
 
   it('generates suite.xml with menus, entries, and resources', async () => {
-    const cczPath = await compiler.compile(minimalHqJson(), 'Test')
+    const { cczPath } = await compiler.compile(minimalHqJson(), 'Test')
     const zip = new AdmZip(cczPath)
     const suite = zip.readAsText('suite.xml')
     expect(suite).toContain('<menu id="m0">')
@@ -84,7 +84,7 @@ describe('CczCompiler', () => {
   })
 
   it('generates app_strings.txt with all required keys', async () => {
-    const cczPath = await compiler.compile(minimalHqJson(), 'Test App')
+    const { cczPath } = await compiler.compile(minimalHqJson(), 'Test App')
     const zip = new AdmZip(cczPath)
     const strings = zip.readAsText('default/app_strings.txt')
     expect(strings).toContain('app.name=Test App')
@@ -93,25 +93,27 @@ describe('CczCompiler', () => {
   })
 
   it('adds case blocks to XForms', async () => {
-    const cczPath = await compiler.compile(minimalHqJson(), 'Test')
+    const { cczPath } = await compiler.compile(minimalHqJson(), 'Test')
     const zip = new AdmZip(cczPath)
     const xform = zip.readAsText('modules-0/forms-0.xml')
     expect(xform).toContain('<case>')
     expect(xform).toContain('<create>')
-    expect(xform).toContain('<case_type/>')
-    expect(xform).toContain('<case_name/>')
-    expect(xform).toContain('<owner_id/>')
+    // DOM serializer may produce <tag></tag> or <tag/> — both are valid XML
+    expect(xform).toMatch(/<case_type\s*\/?>/)
+    expect(xform).toMatch(/<case_name\s*\/?>/)
+    expect(xform).toMatch(/<owner_id\s*\/?>/)
+
   })
 
   it('includes case_name in case detail when not in columns', async () => {
-    const cczPath = await compiler.compile(minimalHqJson(), 'Test')
+    const { cczPath } = await compiler.compile(minimalHqJson(), 'Test')
     const zip = new AdmZip(cczPath)
     const suite = zip.readAsText('suite.xml')
     expect(suite).toContain('case_name')
   })
 
   it('escapes XML special characters in app name', async () => {
-    const cczPath = await compiler.compile(minimalHqJson(), 'App & "Test" <1>')
+    const { cczPath } = await compiler.compile(minimalHqJson(), 'App & "Test" <1>')
     const zip = new AdmZip(cczPath)
     const profile = zip.readAsText('profile.ccpr')
     expect(profile).toContain('&amp;')
@@ -121,7 +123,55 @@ describe('CczCompiler', () => {
   })
 
   it('sanitizes filename for CCZ', async () => {
-    const cczPath = await compiler.compile(minimalHqJson(), 'My App! @#$')
+    const { cczPath } = await compiler.compile(minimalHqJson(), 'My App! @#$')
     expect(cczPath).toContain('My_App____')
+  })
+
+  it('generates per-language app_strings for multi-lang apps', async () => {
+    const hq = minimalHqJson()
+    hq.langs = ['en', 'fr']
+    hq.modules[0].name = { en: 'Registration', fr: 'Inscription' }
+    hq.modules[0].forms[0].name = { en: 'Register', fr: 'Inscrire' }
+    const { cczPath } = await compiler.compile(hq, 'Test App')
+    const zip = new AdmZip(cczPath)
+    // Default (en) app_strings
+    const enStrings = zip.readAsText('default/app_strings.txt')
+    expect(enStrings).toContain('modules.m0=Registration')
+    expect(enStrings).toContain('forms.m0f0=Register')
+    // French app_strings
+    const frStrings = zip.readAsText('fr/app_strings.txt')
+    expect(frStrings).toContain('modules.m0=Inscription')
+    expect(frStrings).toContain('forms.m0f0=Inscrire')
+  })
+
+  it('includes fixture files and suite declarations for lookup tables', async () => {
+    const hq = minimalHqJson()
+    hq._attachments['fixture:facilities'] = `<?xml version="1.0"?>
+<fixture id="item-list:facilities" user_id="">
+  <facilities_list>
+    <item><id>f1</id><name>Clinic A</name></item>
+  </facilities_list>
+</fixture>`
+    const { cczPath } = await compiler.compile(hq, 'Test')
+    const zip = new AdmZip(cczPath)
+    // Fixture file should be in the CCZ
+    const fixtureXml = zip.readAsText('fixtures/facilities.xml')
+    expect(fixtureXml).toContain('Clinic A')
+    // Suite should reference the fixture
+    const suite = zip.readAsText('suite.xml')
+    expect(suite).toContain('fixture-facilities')
+    expect(suite).toContain('./fixtures/facilities.xml')
+  })
+
+  it('generates locale resources for each language in suite.xml', async () => {
+    const hq = minimalHqJson()
+    hq.langs = ['en', 'fr']
+    hq.modules[0].name = { en: 'Registration', fr: 'Inscription' }
+    hq.modules[0].forms[0].name = { en: 'Register', fr: 'Inscrire' }
+    const { cczPath } = await compiler.compile(hq, 'Test App')
+    const zip = new AdmZip(cczPath)
+    const suite = zip.readAsText('suite.xml')
+    expect(suite).toContain('./default/app_strings.txt')
+    expect(suite).toContain('./fr/app_strings.txt')
   })
 })
