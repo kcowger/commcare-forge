@@ -63,7 +63,10 @@ export function elNS(doc: Document, ns: string, tag: string, attrs?: Record<stri
  * Serialize a document to a formatted XML string.
  */
 export function serialize(doc: Document): string {
-  return '<?xml version="1.0"?>\n' + serializer.serializeToString(doc)
+  const xml = serializer.serializeToString(doc)
+  // Avoid double XML declaration — xmldom may include one, and we prepend one
+  if (xml.startsWith('<?xml')) return xml
+  return '<?xml version="1.0"?>\n' + xml
 }
 
 /**

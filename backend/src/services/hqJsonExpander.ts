@@ -350,7 +350,7 @@ function buildQuestionParts(
     if (q.lookup_table) {
       // Dynamic options from a lookup table (fixture)
       const lt = q.lookup_table
-      el += `\n      <itemset nodeset="instance('${lt.tag}')//${lt.tag}_list/item">`
+      el += `\n      <itemset nodeset="instance('${lt.tag}')/${lt.tag}_list/item">`
       el += `\n        <value ref="${lt.value_field}"/>`
       el += `\n        <label ref="${lt.label_field}"/>`
       el += `\n      </itemset>`

@@ -70,12 +70,21 @@ export class CczCompiler {
         suiteDetails.push(this.generateDetail(`m${mIdx}_case_long`, 'long', mod.case_details?.long?.columns || []))
 
         // Add column headers to app_strings for each language
+        // Locale IDs in suite.xml use the detail id prefix: m{idx}_case_short_{field}_header
         const columns = mod.case_details?.short?.columns || []
         for (const col of columns) {
-          const headerKey = `m${mIdx}_${col.field}_header`
+          const field = col.field || 'name'
+          const headerText = this.getLangName(col.header, 'en', defaultLang) || field
           for (const lang of langs) {
             const strings = appStringsByLang.get(lang)!
-            strings[headerKey] = this.getLangName(col.header, lang, defaultLang) || col.field
+            strings[`m${mIdx}_case_short_${field}_header`] = this.getLangName(col.header, lang, defaultLang) || headerText
+          }
+        }
+        // Always add the case_name header (auto-added column in generateDetail)
+        if (!columns.some((c: any) => c.field === 'name' || c.field === 'case_name')) {
+          for (const lang of langs) {
+            const strings = appStringsByLang.get(lang)!
+            strings['case_name_header'] = strings['case_name_header'] || 'Name'
           }
         }
       }

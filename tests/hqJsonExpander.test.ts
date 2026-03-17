@@ -1267,7 +1267,7 @@ describe('lookup tables', () => {
   it('generates itemset in XForm instead of static items', () => {
     const hq = expandToHqJson(lookupTableApp())
     const xform = Object.entries(hq._attachments).find(([k]) => k.endsWith('.xml') && !k.startsWith('fixture:'))![1] as string
-    expect(xform).toContain('<itemset nodeset="instance(\'facilities\')//facilities_list/item">')
+    expect(xform).toContain('<itemset nodeset="instance(\'facilities\')/facilities_list/item">')
     expect(xform).toContain('<value ref="id"/>')
     expect(xform).toContain('<label ref="name"/>')
     // Should NOT contain static items for the lookup question
