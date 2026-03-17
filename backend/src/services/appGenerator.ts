@@ -221,9 +221,18 @@ export class AppGenerator {
     }
   }
 
-  /** Validate HQ JSON structure after expansion. Catches expander bugs before export. */
+  /**
+   * Validate HQ JSON using the same checks CommCare HQ runs on "Make New Version".
+   * Source: commcare-hq/corehq/apps/app_manager/validators.py
+   *
+   * Checks: XML well-formedness, reserved words, property name format,
+   * case_name required, subcase types, preload values, form structure.
+   */
   private validateHqJson(json: any): string[] {
     const errors: string[] = []
+
+    // HQ property name validation regex (from validators.py validate_property)
+    const VALID_PROPERTY = /^[a-zA-Z][\w_-]*$/
 
     if (json.doc_type !== 'Application') {
       errors.push('Missing or invalid doc_type (expected "Application")')
@@ -244,58 +253,90 @@ export class AppGenerator {
       })
 
       if (usesCases && !mod.case_type) {
-        errors.push(`${modName} uses cases but doesn't have a case_type defined`)
+        errors.push(`"${modName}" uses cases but doesn't have a case_type defined`)
       }
 
       for (let fIdx = 0; fIdx < forms.length; fIdx++) {
         const form = forms[fIdx]
         const formName = form.name?.en || `Form ${fIdx}`
 
+        // --- Form structure checks ---
         if (!form.unique_id) {
-          errors.push(`${formName} in ${modName} has no unique_id`)
+          errors.push(`"${formName}" in "${modName}" has no unique_id`)
         } else {
           const attachKey = `${form.unique_id}.xml`
           if (!attachments[attachKey]) {
-            errors.push(`${formName} in ${modName}: no _attachment for unique_id "${form.unique_id}"`)
+            errors.push(`"${formName}" in "${modName}": no _attachment for unique_id "${form.unique_id}"`)
           } else {
             const xform = attachments[attachKey]
 
-            if (!/<(input|select1?|group|repeat|trigger|upload)\s/.test(xform)) {
-              errors.push(`"${formName}" has no question elements in its XForm`)
-            }
-
-            if (!/<itext>/.test(xform)) {
-              errors.push(`${formName} XForm is missing <itext> block`)
-            }
-
-            if (/<label>[^<]+<\/label>/.test(xform)) {
-              errors.push(`${formName} XForm has inline labels — must use jr:itext() references`)
-            }
-
-            // Parse XForm XML to verify it's well-formed
+            // Parse XForm XML — same as HQ's _parse_xml()
             try {
               parseXml(xform)
             } catch (e: any) {
-              errors.push(`"${formName}" XForm is not well-formed XML: ${e.message?.substring(0, 150) || 'parse error'}`)
+              errors.push(`"${formName}" Error parsing XML: ${e.message?.substring(0, 150) || 'parse error'}`)
+            }
+
+            // Check for double XML declaration (causes CLI and HQ parse failures)
+            if (/^(<\?xml[^?]*\?>\s*){2,}/.test(xform)) {
+              errors.push(`"${formName}" XForm has duplicate XML declaration`)
+            }
+
+            if (!/<itext>/.test(xform)) {
+              errors.push(`"${formName}" XForm is missing <itext> block`)
+            }
+
+            if (/<label>[^<]+<\/label>/.test(xform)) {
+              errors.push(`"${formName}" XForm has inline labels — must use jr:itext() references`)
+            }
+
+            // Check for unescaped < > in XML attributes (breaks HQ XML parser)
+            const badAttrs = xform.match(/(?:id|ref)="[^"]*[<>][^"]*"/g)
+            if (badAttrs) {
+              errors.push(`"${formName}" XForm has unescaped < > in attribute: ${badAttrs[0]}`)
             }
           }
         }
 
         if (!form.xmlns) {
-          errors.push(`${formName} in ${modName} has no xmlns`)
+          errors.push(`"${formName}" in "${modName}" has no xmlns`)
         }
 
-        // Check for reserved words in case update properties
+        // --- Case action checks (from HQ's check_actions + check_case_properties) ---
         const actions = form.actions || {}
-        if (actions.update_case?.condition?.type === 'always' && actions.update_case?.update) {
-          for (const prop of Object.keys(actions.update_case.update)) {
-            if (RESERVED_CASE_PROPERTIES.has(prop)) {
-              errors.push(`"${formName}" case update uses reserved word "${prop}"`)
-            }
+
+        // HQ check: open_case must have name_update.question_path
+        if (actions.open_case?.condition?.type === 'always') {
+          if (!actions.open_case.name_update?.question_path) {
+            errors.push(`"${formName}" opens a case but has no case name question path`)
           }
         }
 
-        // Check for reserved words in case preload values
+        // Collect ALL property names for reserved word + format check
+        // (mirrors HQ's form.actions.all_property_names())
+        const allPropertyNames: string[] = []
+
+        // update_case properties
+        if (actions.update_case?.condition?.type === 'always' && actions.update_case?.update) {
+          allPropertyNames.push(...Object.keys(actions.update_case.update))
+        }
+
+        // open_case properties (if any custom properties beyond name)
+        if (actions.open_case?.condition?.type === 'always' && actions.open_case?.update) {
+          allPropertyNames.push(...Object.keys(actions.open_case.update))
+        }
+
+        // Check each property name: reserved words + format validation
+        for (const prop of allPropertyNames) {
+          if (RESERVED_CASE_PROPERTIES.has(prop)) {
+            errors.push(`Case Update uses reserved word "${prop}" in "${formName}" Form in the "${modName}" Menu`)
+          }
+          if (!VALID_PROPERTY.test(prop)) {
+            errors.push(`Case Update uses illegal property name "${prop}" in "${formName}" — must start with letter, only letters/digits/underscores/hyphens`)
+          }
+        }
+
+        // Preload values — HQ rejects case_name, case_type, case_id as preload sources
         if (actions.case_preload?.condition?.type === 'always' && actions.case_preload?.preload) {
           for (const caseProp of Object.values(actions.case_preload.preload) as string[]) {
             if (caseProp === 'case_name' || caseProp === 'case_type' || caseProp === 'case_id') {
@@ -304,13 +345,20 @@ export class AppGenerator {
           }
         }
 
-        // Check for reserved words in subcase properties
+        // Subcase checks (from HQ's check_actions for subcases)
         if (actions.subcases) {
-          for (const sc of actions.subcases) {
+          for (let sIdx = 0; sIdx < actions.subcases.length; sIdx++) {
+            const sc = actions.subcases[sIdx]
+            if (!sc.case_type) {
+              errors.push(`"${formName}" subcase ${sIdx} has no case type`)
+            }
             if (sc.case_properties) {
               for (const prop of Object.keys(sc.case_properties)) {
                 if (RESERVED_CASE_PROPERTIES.has(prop)) {
-                  errors.push(`"${formName}" subcase update uses reserved word "${prop}"`)
+                  errors.push(`"${formName}" subcase uses reserved word "${prop}"`)
+                }
+                if (!VALID_PROPERTY.test(prop)) {
+                  errors.push(`"${formName}" subcase uses illegal property name "${prop}"`)
                 }
               }
             }
