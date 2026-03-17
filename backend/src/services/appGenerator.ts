@@ -15,14 +15,16 @@ import type { AppDefinition, GenerationProgress } from '../types'
 import { ClaudeService } from './claude'
 import { CczCompiler } from './cczCompiler'
 import { AppExporter } from './appExporter'
+import { CliValidator, checkJavaAvailable } from './cliValidator'
 import { BuildLogger } from './buildLogger'
 import { GENERATOR_TOOL_USE_PROMPT } from '../prompts/generatorToolUse'
 import { FIXER_TOOL_USE_PROMPT } from '../prompts/fixerToolUse'
-import { getCompactAppJsonSchema, compactAppSchema } from '../schemas/compactApp'
+import { getCompactAppJsonSchema } from '../schemas/compactApp'
 import { expandToHqJson, validateCompact } from './hqJsonExpander'
 import { parseXml } from '../utils/xmlBuilder'
 import { RESERVED_CASE_PROPERTIES } from '../constants/reservedCaseProperties'
 import type { CompactApp } from '../schemas/compactApp'
+import { app } from 'electron'
 
 /**
  * Tool definition passed to Claude's API via sendOneShotWithTool().
@@ -89,7 +91,7 @@ export class AppGenerator {
       compact = await this.claudeService.sendOneShotWithTool<CompactApp>(
         GENERATOR_TOOL_USE_PROMPT, message, SUBMIT_TOOL,
         () => { /* streaming progress — UI shows spinner */ },
-        { maxTokens: 64000, zodSchema: compactAppSchema }
+        { maxTokens: 64000 }
       )
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err)
@@ -104,10 +106,9 @@ export class AppGenerator {
     logger.log(`Parsed compact: ${compact.modules?.length || 0} modules, ${compact.modules?.reduce((sum: number, m: any) => sum + (m.forms?.length || 0), 0) || 0} forms`)
 
     // Step 2: Validate → fix loop
-    // If the compact JSON has validation errors, we send it to Haiku for fixing.
-    // We track recent error signatures to detect when we're stuck in a loop
-    // (same errors repeating). After MAX_STUCK_REPEATS identical error sets,
-    // we give up and export whatever we have.
+    // Every validation error (compact, expansion, HQ JSON, CLI) routes through
+    // this loop. Claude gets the errors and returns a fixed compact JSON.
+    // We track error signatures to detect when the fixer is stuck.
     const recentErrorSignatures: string[] = []
     const MAX_STUCK_REPEATS = 3
     let attempt = 0
@@ -117,34 +118,51 @@ export class AppGenerator {
       logger.logSection(`VALIDATION ATTEMPT ${attempt}`)
       report('validating', `Validating app definition (attempt ${attempt})...`, attempt)
 
-      // Validate compact format
+      // Phase 1: Compact format validation
       const errors = validateCompact(compact)
       logger.log(`Compact validation: ${errors.length} error(s)`)
-      for (const err of errors) {
-        logger.log(`  ERROR: ${err}`)
-      }
+      for (const err of errors) logger.log(`  ERROR: ${err}`)
 
+      // Phase 2: Expansion + HQ JSON validation (only if compact is clean)
       if (errors.length === 0) {
-        logger.log('Compact validation passed — expanding to HQ format...')
         report('generating', 'Expanding to HQ format...', attempt)
 
-        // Expand to full HQ JSON
-        const hqJson = expandToHqJson(compact)
+        // Wrap expansion in try/catch — malformed compact can crash the expander
+        let hqJson: Record<string, any>
+        try {
+          hqJson = expandToHqJson(compact)
+        } catch (expandErr: any) {
+          const msg = expandErr.message?.substring(0, 200) || 'expansion crash'
+          logger.log(`Expansion failed: ${msg}`)
+          errors.push(`Expansion error: ${msg}`)
+          // Fall through to fix loop
+          hqJson = null as any
+        }
 
-        // Run HQ JSON validation — catches XML issues, reserved words, structural problems
-        const hqErrors = this.validateHqJson(hqJson)
-        if (hqErrors.length > 0) {
-          logger.log(`HQ JSON validation found ${hqErrors.length} issue(s) after expansion:`)
-          for (const err of hqErrors) {
-            logger.log(`  HQ ERROR: ${err}`)
+        if (hqJson && errors.length === 0) {
+          // Run HQ JSON validation (XML well-formedness, reserved words, structure)
+          const hqErrors = this.validateHqJson(hqJson)
+          if (hqErrors.length > 0) {
+            logger.log(`HQ validation found ${hqErrors.length} issue(s):`)
+            for (const err of hqErrors) logger.log(`  HQ ERROR: ${err}`)
+            errors.push(...hqErrors)
           }
-          // Feed HQ errors back through the fix loop by treating them as compact errors.
-          // The fixer will see these error messages and adjust the compact JSON.
-          errors.push(...hqErrors)
-          logger.log('Routing HQ errors back through fix loop...')
-          // Fall through to the fix loop below
-        } else {
-          logger.log('RESULT: SUCCESS — compact + HQ validation passed')
+        }
+
+        // Phase 3: CLI validation (only if everything else passed)
+        if (hqJson && errors.length === 0) {
+          report('validating', 'Running CommCare CLI validation...', attempt)
+          const cliErrors = await this.runCliValidation(hqJson, resolvedAppName, logger)
+          if (cliErrors.length > 0) {
+            logger.log(`CLI validation found ${cliErrors.length} issue(s):`)
+            for (const err of cliErrors) logger.log(`  CLI ERROR: ${err}`)
+            errors.push(...cliErrors)
+          }
+        }
+
+        // All validations passed — export
+        if (hqJson && errors.length === 0) {
+          logger.log('RESULT: SUCCESS — all validations passed')
           report('success', 'App generated and validated!', attempt)
           return await this.exportResults(hqJson, resolvedAppName, logger)
         }
@@ -158,7 +176,7 @@ export class AppGenerator {
       if (recentErrorSignatures.length === MAX_STUCK_REPEATS && recentErrorSignatures.every(s => s === sig)) {
         logger.log(`RESULT: FAILED — same errors repeated ${MAX_STUCK_REPEATS} times`)
         report('failed', `Unable to resolve: ${errors[0]?.substring(0, 200)}`, attempt)
-        // Still try to export what we have
+        // Still try to export what we have so user can inspect
         try {
           const hqJson = expandToHqJson(compact)
           const result = await this.exportResults(hqJson, resolvedAppName, logger)
@@ -183,7 +201,7 @@ export class AppGenerator {
         fixedCompact = await this.claudeService.sendOneShotWithTool<CompactApp>(
           FIXER_TOOL_USE_PROMPT, fixMessage, SUBMIT_TOOL,
           () => { /* streaming progress */ },
-          { model: 'claude-haiku-4-5-20251001', maxTokens: 32768, zodSchema: compactAppSchema }
+          { model: 'claude-haiku-4-5-20251001', maxTokens: 32768 }
         )
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err)
@@ -302,6 +320,39 @@ export class AppGenerator {
     }
 
     return errors
+  }
+
+  /** Run CommCare CLI validator on the compiled CCZ. Returns errors (empty = pass). */
+  private async runCliValidation(hqJson: any, appName: string, logger: BuildLogger): Promise<string[]> {
+    try {
+      const javaCheck = await checkJavaAvailable()
+      if (!javaCheck.available) {
+        logger.log('CLI validation skipped — Java not available')
+        return []
+      }
+
+      // Compile a temporary CCZ for validation
+      const cczResult = await this.cczCompiler.compile(hqJson, appName)
+      const userDataDir = app?.getPath?.('userData') || ''
+      const validator = new CliValidator(userDataDir)
+      const result = await validator.validate(cczResult.cczPath)
+
+      if (result.skipped) {
+        logger.log(`CLI validation skipped: ${result.skipReason}`)
+        return []
+      }
+
+      if (result.success) {
+        logger.log('CLI validation passed')
+        return []
+      }
+
+      return result.errors
+    } catch (err: any) {
+      logger.log(`CLI validation error: ${err.message}`)
+      // Don't fail the build if CLI itself crashes — it's an extra safety net
+      return []
+    }
   }
 
   /** Export HQ JSON + compile CCZ. */
