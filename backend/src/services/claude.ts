@@ -31,6 +31,7 @@ export class ClaudeService {
   async sendMessage(message: string, attachments?: FileAttachment[]): Promise<string> {
     const userContent = await this.buildUserContent(message, attachments)
     this.conversationHistory.push({ role: 'user', content: userContent })
+    this.stripPdfsIfOverPageLimit()
     await this.estimateAndTrimIfNeeded()
 
     const response = await this.client.messages.create({
@@ -57,6 +58,7 @@ export class ClaudeService {
   ): Promise<string> {
     const userContent = await this.buildUserContent(message, attachments)
     this.conversationHistory.push({ role: 'user', content: userContent })
+    this.stripPdfsIfOverPageLimit()
     await this.estimateAndTrimIfNeeded()
 
     const stream = this.client.messages.stream({
@@ -202,12 +204,12 @@ export class ClaudeService {
       } else if (attachment.type === 'application/pdf') {
         // Split large PDFs into ≤100 page chunks (API limit)
         const pdfChunks = await this.splitPdfIfNeeded(attachment.data)
-        const MAX_CHUNKS = 3 // Cap at 300 pages per request
+        const MAX_CHUNKS = 1 // Only send 1 chunk (≤80 pages) — API limit is 100 total
         if (pdfChunks.length > MAX_CHUNKS) {
           content.push({
             type: 'text',
-            text: `[Note: ${attachment.name} has approximately ${pdfChunks.length * 100}+ pages. ` +
-                  `Only the first ${MAX_CHUNKS * 100} pages are included. ` +
+            text: `[Note: ${attachment.name} has more than 80 pages. ` +
+                  `Only the first 80 pages are included. ` +
                   `Please upload remaining pages separately if needed.]`
           })
           pdfChunks.splice(MAX_CHUNKS)
@@ -288,6 +290,48 @@ export class ClaudeService {
     return content
   }
 
+  /**
+   * Strip old PDF documents from conversation history to stay under the 100-page API limit.
+   * The Anthropic API enforces a hard 100-page limit across ALL PDFs in a single request.
+   */
+  private stripPdfsIfOverPageLimit(): void {
+    const MAX_PDF_PAGES = 95 // leave some headroom under the 100-page hard limit
+
+    // Count total PDF pages by estimating from base64 size (rough: ~3KB base64 per page)
+    // We can't parse every PDF in history efficiently, so use a conservative estimate.
+    // Better: track page counts when PDFs are added and strip oldest when over limit.
+    let pdfBlockCount = 0
+    for (const msg of this.conversationHistory) {
+      if (!Array.isArray(msg.content)) continue
+      for (const block of msg.content) {
+        if (block.type === 'document' && block.source?.type === 'base64' && block.source?.media_type === 'application/pdf') {
+          pdfBlockCount++
+        }
+      }
+    }
+
+    // If more than one PDF document block in history, strip older ones to keep only the latest
+    // This is aggressive but safe — the API will reject if total pages > 100
+    if (pdfBlockCount > 1) {
+      let kept = 0
+      // Walk backwards to keep the newest PDF, strip the rest
+      for (let mIdx = this.conversationHistory.length - 1; mIdx >= 0; mIdx--) {
+        const msg = this.conversationHistory[mIdx]
+        if (!Array.isArray(msg.content)) continue
+        for (let i = 0; i < msg.content.length; i++) {
+          const block = msg.content[i]
+          if (block.type === 'document' && block.source?.type === 'base64' && block.source?.media_type === 'application/pdf') {
+            if (kept > 0) {
+              // Strip this older PDF
+              msg.content[i] = { type: 'text', text: '[Previously uploaded PDF — removed to stay under page limit]' }
+            }
+            kept++
+          }
+        }
+      }
+    }
+  }
+
   /** Check token count and trim conversation history if needed before sending to API. */
   private async estimateAndTrimIfNeeded(): Promise<void> {
     const TOKEN_LIMIT = 190_000 // leave headroom for response
@@ -346,9 +390,9 @@ export class ClaudeService {
     return false
   }
 
-  /** Split a PDF into ≤100 page chunks. Returns array of base64 strings. */
+  /** Split a PDF into ≤80 page chunks. API limit is 100 pages total per request. */
   private async splitPdfIfNeeded(base64Data: string): Promise<string[]> {
-    const MAX_PAGES = 100
+    const MAX_PAGES = 80
     try {
       const pdfBytes = Buffer.from(base64Data, 'base64')
       const pdf = await PDFDocument.load(pdfBytes)
