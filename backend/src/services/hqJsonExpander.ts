@@ -168,6 +168,12 @@ function genShortId(): string {
   return randomBytes(8).toString('hex')
 }
 
+/** Sanitize a string for use as part of an XML attribute ID (e.g. itext id).
+ *  Strips characters that are invalid in XML attributes: < > & " ' */
+function sanitizeForId(s: string): string {
+  return s.replace(/[<>&"']/g, '_')
+}
+
 function escapeXml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;')
 }
@@ -287,7 +293,7 @@ function buildQuestionParts(
       for (const lang of langs) {
         const entries = itextByLang.get(lang)!
         const optLabel = opt.labels_by_language?.[lang] || opt.label
-        entries.push(`<text id="${q.id}-${opt.value}-label"><value>${escapeXml(optLabel)}</value></text>`)
+        entries.push(`<text id="${q.id}-${sanitizeForId(opt.value)}-label"><value>${escapeXml(optLabel)}</value></text>`)
       }
     }
   }
@@ -350,7 +356,7 @@ function buildQuestionParts(
       el += `\n      </itemset>`
     } else {
       const items = (q.options || []).map(opt =>
-        `  <item><label ref="jr:itext('${q.id}-${opt.value}-label')"/><value>${escapeXml(opt.value)}</value></item>`
+        `  <item><label ref="jr:itext('${q.id}-${sanitizeForId(opt.value)}-label')"/><value>${escapeXml(opt.value)}</value></item>`
       ).join('\n    ')
       el += `\n    ${items}`
     }
