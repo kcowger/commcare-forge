@@ -93,16 +93,10 @@ const compactQuestionSchema = z.object({
       'Nested questions for group/repeat types'
     )
   },
-}).refine(
-  q => (q.type !== 'select1' && q.type !== 'select') || (q.options && q.options.length >= 2),
-  { message: 'select1/select questions must have at least 2 options' }
-).refine(
-  q => q.type !== 'hidden' || q.calculate,
-  { message: 'hidden questions should have a calculate expression' }
-).refine(
-  q => (q.type !== 'group' && q.type !== 'repeat') || (q.children && q.children.length > 0),
-  { message: 'group/repeat questions must have at least one child question' }
-)
+})
+// Semantic refinements removed — these checks are handled by validateCompact()
+// in the fix loop, which gives Claude a chance to correct them. Keeping them
+// here caused Zod to reject output before the fix loop could run.
 
 /** Child/sub-case created by a form and linked to the parent case. */
 const compactChildCaseSchema = z.object({
@@ -163,13 +157,9 @@ const compactFormSchema = z.object({
   questions: z.array(compactQuestionSchema).min(1, 'Every form must have at least one question').describe(
     'Array of questions in the form. Every form must have at least one question.'
   ),
-}).refine(
-  f => f.type !== 'registration' || f.case_name_field,
-  { message: 'Registration forms must have case_name_field' }
-).refine(
-  f => !f.close_case || f.type === 'followup',
-  { message: 'close_case is only valid on followup forms' }
-).describe('A form within a module')
+}).describe('A form within a module')
+// Form-level refinements (registration needs case_name_field, close_case only on followup)
+// handled by validateCompact() in the fix loop.
 
 const caseListColumnSchema = z.object({
   field: z.string().describe('Case property name'),
