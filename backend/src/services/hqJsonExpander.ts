@@ -647,7 +647,7 @@ export function validateCompact(compact: CompactApp): string[] {
       // Validate select questions have options and XPath expressions (recursively for group/repeat children)
       function validateQuestions(questions: CompactQuestion[], formName: string) {
         for (const q of questions) {
-          if ((q.type === 'select1' || q.type === 'select') && (!q.options || q.options.length === 0)) {
+          if ((q.type === 'select1' || q.type === 'select') && !q.lookup_table && (!q.options || q.options.length === 0)) {
             errors.push(`Question "${q.id}" in "${formName}" is a select but has no options`)
           }
           // Validate XPath expressions
