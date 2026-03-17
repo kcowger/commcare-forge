@@ -20,6 +20,8 @@ import { GENERATOR_TOOL_USE_PROMPT } from '../prompts/generatorToolUse'
 import { FIXER_TOOL_USE_PROMPT } from '../prompts/fixerToolUse'
 import { getCompactAppJsonSchema, compactAppSchema } from '../schemas/compactApp'
 import { expandToHqJson, validateCompact } from './hqJsonExpander'
+import { parseXml } from '../utils/xmlBuilder'
+import { RESERVED_CASE_PROPERTIES } from '../constants/reservedCaseProperties'
 import type { CompactApp } from '../schemas/compactApp'
 
 /**
@@ -123,24 +125,29 @@ export class AppGenerator {
       }
 
       if (errors.length === 0) {
-        logger.log('RESULT: SUCCESS — compact validated')
+        logger.log('Compact validation passed — expanding to HQ format...')
         report('generating', 'Expanding to HQ format...', attempt)
 
         // Expand to full HQ JSON
         const hqJson = expandToHqJson(compact)
 
-        // Run HQ JSON validation as a safety check
+        // Run HQ JSON validation — catches XML issues, reserved words, structural problems
         const hqErrors = this.validateHqJson(hqJson)
         if (hqErrors.length > 0) {
-          logger.log(`WARNING: HQ JSON validation found ${hqErrors.length} issue(s) after expansion:`)
+          logger.log(`HQ JSON validation found ${hqErrors.length} issue(s) after expansion:`)
           for (const err of hqErrors) {
             logger.log(`  HQ ERROR: ${err}`)
           }
-          // These shouldn't happen if the expander is correct, but log them
+          // Feed HQ errors back through the fix loop by treating them as compact errors.
+          // The fixer will see these error messages and adjust the compact JSON.
+          errors.push(...hqErrors)
+          logger.log('Routing HQ errors back through fix loop...')
+          // Fall through to the fix loop below
+        } else {
+          logger.log('RESULT: SUCCESS — compact + HQ validation passed')
+          report('success', 'App generated and validated!', attempt)
+          return await this.exportResults(hqJson, resolvedAppName, logger)
         }
-
-        report('success', 'App generated and validated!', attempt)
-        return await this.exportResults(hqJson, resolvedAppName, logger)
       }
 
       // Stuck detection: hash errors into a signature, keep a sliding window of
@@ -196,7 +203,7 @@ export class AppGenerator {
     }
   }
 
-  /** Validate HQ JSON structure after expansion. Safety net for expander bugs. */
+  /** Validate HQ JSON structure after expansion. Catches expander bugs before export. */
   private validateHqJson(json: any): string[] {
     const errors: string[] = []
 
@@ -246,11 +253,50 @@ export class AppGenerator {
             if (/<label>[^<]+<\/label>/.test(xform)) {
               errors.push(`${formName} XForm has inline labels — must use jr:itext() references`)
             }
+
+            // Parse XForm XML to verify it's well-formed
+            try {
+              parseXml(xform)
+            } catch (e: any) {
+              errors.push(`"${formName}" XForm is not well-formed XML: ${e.message?.substring(0, 150) || 'parse error'}`)
+            }
           }
         }
 
         if (!form.xmlns) {
           errors.push(`${formName} in ${modName} has no xmlns`)
+        }
+
+        // Check for reserved words in case update properties
+        const actions = form.actions || {}
+        if (actions.update_case?.condition?.type === 'always' && actions.update_case?.update) {
+          for (const prop of Object.keys(actions.update_case.update)) {
+            if (RESERVED_CASE_PROPERTIES.has(prop)) {
+              errors.push(`"${formName}" case update uses reserved word "${prop}"`)
+            }
+          }
+        }
+
+        // Check for reserved words in case preload values
+        if (actions.case_preload?.condition?.type === 'always' && actions.case_preload?.preload) {
+          for (const caseProp of Object.values(actions.case_preload.preload) as string[]) {
+            if (caseProp === 'case_name' || caseProp === 'case_type' || caseProp === 'case_id') {
+              errors.push(`"${formName}" case preload uses "${caseProp}" — use "${caseProp === 'case_name' ? 'name' : caseProp === 'case_id' ? '@case_id' : caseProp}" instead`)
+            }
+          }
+        }
+
+        // Check for reserved words in subcase properties
+        if (actions.subcases) {
+          for (const sc of actions.subcases) {
+            if (sc.case_properties) {
+              for (const prop of Object.keys(sc.case_properties)) {
+                if (RESERVED_CASE_PROPERTIES.has(prop)) {
+                  errors.push(`"${formName}" subcase update uses reserved word "${prop}"`)
+                }
+              }
+            }
+          }
         }
       }
     }
