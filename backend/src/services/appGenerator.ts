@@ -409,6 +409,67 @@ export class AppGenerator {
       }
     }
 
+    // --- App-level checks ---
+
+    // No modules
+    if (modules.length === 0) {
+      errors.push('Application has no modules')
+    }
+
+    // Empty language codes
+    const langs = json.langs || []
+    for (const lang of langs) {
+      if (!lang || !lang.trim()) {
+        errors.push('Application has an empty language code')
+      }
+    }
+
+    // Duplicate XMLNS across forms
+    const allXmlns = new Set<string>()
+    for (const mod of modules) {
+      for (const form of mod.forms || []) {
+        if (form.xmlns) {
+          if (allXmlns.has(form.xmlns)) {
+            errors.push(`Duplicate xmlns "${form.xmlns}" found across forms — each form must have a unique xmlns`)
+          }
+          allXmlns.add(form.xmlns)
+        }
+      }
+    }
+
+    // Case type consistency: every case_type used in followup forms must have
+    // a registration form somewhere in the app
+    const registeredCaseTypes = new Set<string>()
+    const followupCaseTypes = new Map<string, string>() // case_type → first form name that uses it
+    for (const mod of modules) {
+      const ct = mod.case_type || ''
+      for (const form of mod.forms || []) {
+        const fname = form.name?.en || 'Unknown'
+        const actions = form.actions || {}
+        if (actions.open_case?.condition?.type === 'always' && ct) {
+          registeredCaseTypes.add(ct)
+        }
+        if (form.requires === 'case' && ct && !followupCaseTypes.has(ct)) {
+          followupCaseTypes.set(ct, fname)
+        }
+      }
+    }
+    // Also count subcases as registered types
+    for (const mod of modules) {
+      for (const form of mod.forms || []) {
+        for (const sc of form.actions?.subcases || []) {
+          if (sc.case_type && sc.condition?.type === 'always') {
+            registeredCaseTypes.add(sc.case_type)
+          }
+        }
+      }
+    }
+    for (const [ct, fname] of followupCaseTypes) {
+      if (!registeredCaseTypes.has(ct)) {
+        errors.push(`Case type "${ct}" for form "${fname}" does not exist — no registration form creates this case type`)
+      }
+    }
+
     return errors
   }
 

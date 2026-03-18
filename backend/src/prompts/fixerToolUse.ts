@@ -76,6 +76,15 @@ A hidden calculated field's calculate expression references its own question pat
 ### "Logic is cyclical, referencing itself"
 Same as above — a calculate expression creates a circular dependency. The calculate must only reference other questions, never its own path.
 
+### "follows up case type but no form in the app creates it"
+A followup form references a case_type, but no registration form in the app creates cases of that type. Fix by either:
+1. Adding a registration form for that case_type in the same or another module
+2. Changing the form type to "survey" if case management isn't needed
+3. Making sure the module's case_type matches an existing registration form's module case_type
+
+### "has no forms or case list" / "has no forms and case list is not enabled"
+A module has 0 forms. Either add at least one form, or remove the empty module. Case-list-only modules are an advanced pattern — prefer adding forms instead.
+
 ## Key Rules
 - Use "text" with "readonly": true for display-only preloaded fields, NOT "trigger"
 - Labels should be clear and professional (e.g. "Patient Name", not "Patient Name (loaded from case)")
