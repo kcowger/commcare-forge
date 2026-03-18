@@ -87,7 +87,7 @@ export function expandToHqJson(compact: CompactApp): Record<string, any> {
       root_module_id: null,
       forms,
       case_details: caseDetails,
-      case_list: { doc_type: DOC_TYPES.CaseList, show: false, label: {}, media_image: {}, media_audio: {}, custom_icons: [] },
+      case_list: { doc_type: DOC_TYPES.CaseList, show: isCaseListOnly ? true : false, label: {}, media_image: {}, media_audio: {}, custom_icons: [] },
       case_list_form: { doc_type: DOC_TYPES.CaseListForm, form_id: null, label: {} },
       search_config: { doc_type: DOC_TYPES.CaseSearch, properties: [], default_properties: [], include_closed: false },
       display_style: 'list',
@@ -645,6 +645,11 @@ export function validateCompact(compact: CompactApp): string[] {
       }
       if (form.type === 'registration' && !form.case_name_field) {
         errors.push(`"${form.name}" is a registration form but has no case_name_field`)
+      }
+
+      // Case-list-only modules (0 forms) must have a case_type — otherwise they're empty and HQ rejects them
+      if ((mod.forms || []).length === 0 && !mod.case_type) {
+        errors.push(`"${mod.name}" has no forms and no case_type — either add forms or set a case_type for a case list view`)
       }
 
       // Validate select questions have options and XPath expressions (recursively for group/repeat children)

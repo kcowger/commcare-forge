@@ -290,6 +290,14 @@ export class AppGenerator {
         errors.push(`"${modName}" uses cases but doesn't have a case_type defined`)
       }
 
+      // HQ rejects modules with no forms and no case list
+      if (forms.length === 0 && !mod.case_type) {
+        errors.push(`"${modName}" has no forms or case list — add forms or set a case_type`)
+      }
+      if (forms.length === 0 && mod.case_type && !mod.case_list?.show) {
+        errors.push(`"${modName}" has no forms and case list is not enabled — case-list-only modules need show: true`)
+      }
+
       for (let fIdx = 0; fIdx < forms.length; fIdx++) {
         const form = forms[fIdx]
         const formName = form.name?.en || `Form ${fIdx}`

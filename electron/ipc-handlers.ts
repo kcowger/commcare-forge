@@ -183,6 +183,7 @@ function checkFileSize(filePath: string): void {
 }
 
 let claudeService: ClaudeService | null = null
+let appGenerator: AppGenerator | null = null
 let pendingHistory: Array<{ role: string; content: any }> | null = null
 
 function getConversationsFilePath(): string {
@@ -272,10 +273,13 @@ export function registerIpcHandlers(ipcMain: IpcMain) {
       const service = getClaudeService()
       const window = BrowserWindow.fromWebContents(event.sender)
 
-      const generator = new AppGenerator(service)
+      // Reuse the generator instance so lastCompact is preserved for inline editing
+      if (!appGenerator || claudeService !== service) {
+        appGenerator = new AppGenerator(service)
+      }
       const conversationContext = service.getConversationSummary()
 
-      const result = await generator.generate(conversationContext, (progress) => {
+      const result = await appGenerator.generate(conversationContext, (progress) => {
         if (window && !window.isDestroyed()) {
           window.webContents.send('app:generation-progress', progress)
         }
@@ -706,6 +710,7 @@ export function registerIpcHandlers(ipcMain: IpcMain) {
     if (claudeService) {
       claudeService.resetConversation()
     }
+    appGenerator = null
     pendingHistory = null
   })
 
