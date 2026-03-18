@@ -169,11 +169,16 @@ const caseListColumnSchema = z.object({
 const compactModuleSchema = z.object({
   name: z.string().describe('Display name for the module/menu'),
   case_type: z.string().regex(/^[\w-]+$/, 'case_type must only contain letters, digits, underscores, and hyphens').optional().describe(
-    'Required if any form is "registration" or "followup". Use short snake_case (e.g. "patient", "household_visit"). Only letters, digits, underscores, hyphens.'
+    'Required if any form is "registration" or "followup". Also required for case-list-only modules. Use short snake_case (e.g. "patient", "household_visit"). Only letters, digits, underscores, hyphens.'
   ),
-  forms: z.array(compactFormSchema).min(1, 'Module must have at least one form').describe('Array of forms in this module'),
+  forms: z.array(compactFormSchema).optional().describe(
+    'Array of forms in this module. Can be empty or omitted for case-list-only modules (filtered views of existing cases).'
+  ),
   case_list_columns: z.array(caseListColumnSchema).optional().describe(
     'Columns shown in the case list. Each has "field" (case property) and "header" (display text). Do NOT include "name" — it is shown automatically. Do NOT use reserved property names.'
+  ),
+  module_filter: z.string().optional().describe(
+    'XPath expression that filters which cases appear in this module\'s case list. Use case properties: e.g. "risk_level = \'high\'" shows only high-risk cases. Useful for creating filtered views of the same case type.'
   ),
 }).describe('A module (menu) in the app')
 

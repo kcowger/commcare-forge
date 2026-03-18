@@ -1,5 +1,11 @@
 node_modules/
 dist/
+
+# Large app example source files (keep compact excerpts only)
+app-examples/*.ccz
+app-examples/guatemala-hypertension.json
+app-examples/kenya-nawirimeal.json
+app-examples/mc-colombia.json
 dist-electron/
 dist-renderer/
 out/

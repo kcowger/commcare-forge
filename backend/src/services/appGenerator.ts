@@ -43,11 +43,17 @@ export class AppGenerator {
   private claudeService: ClaudeService
   private cczCompiler: CczCompiler
   private appExporter: AppExporter
+  private lastCompact: CompactApp | null = null
 
   constructor(claudeService: ClaudeService) {
     this.claudeService = claudeService
     this.cczCompiler = new CczCompiler()
     this.appExporter = new AppExporter()
+  }
+
+  /** Get the last successfully generated compact JSON (for inline editing). */
+  getLastCompact(): CompactApp | null {
+    return this.lastCompact
   }
 
   async generate(
@@ -84,7 +90,17 @@ export class AppGenerator {
     logger.logSection('GENERATION')
     logger.log('Sending generation request to Claude (tool use)...')
 
-    const message = `Here is the full conversation with the user about the app they want:\n\n${conversationContext}\n\nBased on this conversation, generate the compact app definition. App name: "${resolvedAppName}".`
+    // If we have a previous build, pass it to Claude so it can edit rather than regenerate from scratch.
+    // This makes small changes much more reliable — Claude modifies the existing structure instead of
+    // re-inventing it from the conversation history.
+    let message: string
+    if (this.lastCompact) {
+      const prevJson = JSON.stringify(this.lastCompact, null, 2)
+      message = `Here is the full conversation with the user about the app they want:\n\n${conversationContext}\n\nHere is the CURRENT app definition that was previously generated:\n\`\`\`json\n${prevJson}\n\`\`\`\n\nBased on the conversation (especially the most recent messages), update the app definition. Preserve everything that doesn't need to change. App name: "${resolvedAppName}".`
+      logger.log('Using previous compact JSON as starting point for edit')
+    } else {
+      message = `Here is the full conversation with the user about the app they want:\n\n${conversationContext}\n\nBased on this conversation, generate the compact app definition. App name: "${resolvedAppName}".`
+    }
 
     let compact: CompactApp
     try {
@@ -163,6 +179,8 @@ export class AppGenerator {
         // All validations passed — export
         if (hqJson && errors.length === 0) {
           logger.log('RESULT: SUCCESS — all validations passed')
+          // Store the validated compact JSON for future inline editing
+          this.lastCompact = compact
           report('success', 'App generated and validated!', attempt)
           return await this.exportResults(hqJson, resolvedAppName, logger)
         }

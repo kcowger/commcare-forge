@@ -1,0 +1,1326 @@
+{
+  "app_name": "Kenya NAWIRI Meal",
+  "_comment": "Nutrition/livelihoods program. Demonstrates: (1) cascading lookup tables for geographic hierarchy (county->subcounty->ward->CHU->village), (2) savings group registration with auto-generated UUID code, (3) followup form with 14 case preloads for financial tracking across savings cycles, (4) member-level attendance and health messaging tracking, (5) multi-select for session topics received",
+  "languages": [
+    {
+      "code": "en",
+      "label": "English",
+      "default": true
+    }
+  ],
+  "lookup_tables": [
+    {
+      "tag": "ke_county",
+      "fields": [
+        {
+          "field_name": "county_name",
+          "label": "County Name"
+        }
+      ],
+      "data": [
+        {
+          "county_name": "Samburu"
+        },
+        {
+          "county_name": "Turkana"
+        }
+      ]
+    },
+    {
+      "tag": "ke_subcounty",
+      "fields": [
+        {
+          "field_name": "sub_county_name",
+          "label": "Sub-County"
+        },
+        {
+          "field_name": "county_id",
+          "label": "County ID"
+        }
+      ],
+      "data": [
+        {
+          "sub_county_name": "Samburu North",
+          "county_id": "Samburu"
+        }
+      ]
+    },
+    {
+      "tag": "ke_ward",
+      "fields": [
+        {
+          "field_name": "ward_name",
+          "label": "Ward"
+        },
+        {
+          "field_name": "sub_county_id",
+          "label": "Sub-County ID"
+        }
+      ],
+      "data": [
+        {
+          "ward_name": "Wamba North",
+          "sub_county_id": "Samburu North"
+        }
+      ]
+    },
+    {
+      "tag": "ke_chu",
+      "fields": [
+        {
+          "field_name": "chu_name",
+          "label": "CHU Name"
+        },
+        {
+          "field_name": "chu_id",
+          "label": "CHU ID"
+        },
+        {
+          "field_name": "ward_id",
+          "label": "Ward ID"
+        }
+      ],
+      "data": [
+        {
+          "chu_name": "Wamba",
+          "chu_id": "CHU001",
+          "ward_id": "Wamba North"
+        }
+      ]
+    },
+    {
+      "tag": "ke_village",
+      "fields": [
+        {
+          "field_name": "village_name",
+          "label": "Village"
+        },
+        {
+          "field_name": "chu_id",
+          "label": "CHU ID"
+        }
+      ],
+      "data": [
+        {
+          "village_name": "Lolkuniani",
+          "chu_id": "CHU001"
+        }
+      ]
+    }
+  ],
+  "modules": [
+    {
+      "name": "ENROLL SILC GROUP",
+      "case_type": "silc_group",
+      "_comment": "Registration module: creates savings group case with geographic lookups and auto-generated group code via concat('SILC-', uuid(10))",
+      "forms": [
+        {
+          "name": "ENROLL SILC GROUP",
+          "type": "registration",
+          "questions": [
+            {
+              "id": "Info",
+              "type": "Group",
+              "children": [
+                {
+                  "id": "Info/county",
+                  "type": "Select",
+                  "label": "County",
+                  "required": true,
+                  "lookup_table": {
+                    "tag": "ke_county",
+                    "value_field": "county_name",
+                    "label_field": "county_name"
+                  }
+                },
+                {
+                  "id": "Info/sub_county",
+                  "type": "Select",
+                  "label": "Sub-county",
+                  "required": true,
+                  "lookup_table": {
+                    "tag": "ke_subcounty",
+                    "value_field": "sub_county_name",
+                    "label_field": "sub_county_name",
+                    "filter": "[county_id = /data/Info/county]"
+                  }
+                },
+                {
+                  "id": "Info/ward",
+                  "type": "Select",
+                  "label": "Ward",
+                  "required": true,
+                  "lookup_table": {
+                    "tag": "ke_ward",
+                    "value_field": "ward_name",
+                    "label_field": "ward_name",
+                    "filter": "[sub_county_id = /data/Info/sub_county]"
+                  }
+                },
+                {
+                  "id": "Info/chu",
+                  "type": "Select",
+                  "label": "Community Health Unit",
+                  "required": true,
+                  "lookup_table": {
+                    "tag": "ke_chu",
+                    "value_field": "chu_id",
+                    "label_field": "chu_name",
+                    "filter": "[ward_id = /data/Info/ward]"
+                  }
+                },
+                {
+                  "id": "Info/village",
+                  "type": "Select",
+                  "label": "Village",
+                  "required": true,
+                  "lookup_table": {
+                    "tag": "ke_village",
+                    "value_field": "village_id",
+                    "label_field": "village_name",
+                    "filter": "[chu_id = /data/Info/chu]"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "group_info",
+              "type": "Group",
+              "label": "Group Information",
+              "children": [
+                {
+                  "id": "group_info/name_SILC_grp",
+                  "type": "Text",
+                  "label": "Name of SILC group",
+                  "required": true
+                },
+                {
+                  "id": "group_info/grp_formation_date",
+                  "type": "Date",
+                  "label": "Date of group formation",
+                  "constraint": ". <= today()",
+                  "required": true
+                },
+                {
+                  "id": "group_info/gps",
+                  "type": "GeoPointWidget",
+                  "label": "GPS"
+                },
+                {
+                  "id": "group_info/member_number",
+                  "type": "Int",
+                  "label": "Number of Members at the time group was formed"
+                },
+                {
+                  "id": "group_info/supervisor_name",
+                  "type": "Text",
+                  "label": "Supervisor Name",
+                  "required": true
+                },
+                {
+                  "id": "group_info/field_agent",
+                  "type": "Int",
+                  "label": "Field Agent",
+                  "required": true
+                },
+                {
+                  "id": "group_info/savix_group_id",
+                  "type": "Text",
+                  "label": "SAVIX Group ID",
+                  "required": true
+                },
+                {
+                  "id": "group_info/community_name",
+                  "type": "Text",
+                  "label": "Community Name",
+                  "relevant": "false()",
+                  "required": true
+                },
+                {
+                  "id": "group_info/ip_name",
+                  "type": "Text",
+                  "label": "IP Name",
+                  "relevant": "false()",
+                  "required": true
+                },
+                {
+                  "id": "group_info/group_code",
+                  "type": "DataBindOnly",
+                  "calculate": "concat('SILC-', uuid(10))"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "SILC DATA COLLECTION",
+      "case_type": "silc_group",
+      "_comment": "Followup module: preloads 14 financial fields from case, tracks savings cycles, loans outstanding, calculates profit (A-B formula). Two forms: data collection + group detail update.",
+      "case_list_columns": [
+        {
+          "field": "case_name",
+          "header": "Group Name"
+        },
+        {
+          "field": "community_name",
+          "header": "Community"
+        },
+        {
+          "field": "cycle_number",
+          "header": "Cycle"
+        },
+        {
+          "field": "date_of_data_collection",
+          "header": "Last Collection"
+        }
+      ],
+      "forms": [
+        {
+          "name": "SILC DATA COLLECTION FORM",
+          "type": "followup",
+          "case_preload": {
+            "silc/cycle_number": "cycle_number",
+            "silc/savings_date": "savings_date",
+            "silc/group_status_cycle_start": "group_status_cycle_start",
+            "silc/members_registered_start": "members_registered_start",
+            "silc/savings_reinvested_start_highercycle": "savings_reinvested_highercycle",
+            "silc/group_property_cycle_start": "group_property_cycle_start",
+            "silc/cycle_savings_value": "cycle_savings_value",
+            "silc/no_of_loans_outstanding": "no_of_loans_outstanding",
+            "silc/written_off_loans_value": "written_off_loans_value",
+            "silc/bank_balance_socialother": "bank_balance_socialother",
+            "silc/value_of_external_debts": "value_of_external_debts",
+            "silc/meeting_frequency": "meeting_frequency",
+            "silc/meeting_day": "meeting_day",
+            "silc/target_savings_member": "target_savings_member"
+          },
+          "questions": [
+            {
+              "id": "Details",
+              "type": "Group",
+              "label": "GROUP DETAILS",
+              "children": [
+                {
+                  "id": "Details/details_lb",
+                  "type": "Label",
+                  "label": "GROUP DETAILS Group Name: Group Number: Last Date of Data Collection: Members at Group Creation: Cycle Number: Profit From Meeting:"
+                }
+              ]
+            },
+            {
+              "id": "silc",
+              "type": "Group",
+              "label": "SILC DATA COLLECTION FORM",
+              "children": [
+                {
+                  "id": "silc/date_of_data_collection",
+                  "type": "Date",
+                  "label": "Date of Data Collection",
+                  "constraint": ". <= today()",
+                  "required": true
+                },
+                {
+                  "id": "silc/cycle_number",
+                  "type": "Int",
+                  "label": "1. Cycle Number",
+                  "calculate": "instance('casedb')/casedb/case[@case_id = instance('commcaresession')/session/data/case_id]/cycle_number"
+                },
+                {
+                  "id": "silc/savings_date",
+                  "type": "Date",
+                  "label": "2. Date Savings started this cycle",
+                  "calculate": "instance('casedb')/casedb/case[@case_id = instance('commcaresession')/session/data/case_id]/savings_date",
+                  "constraint": ". <= today()"
+                },
+                {
+                  "id": "silc/group_status_cycle_start",
+                  "type": "Select",
+                  "label": "3. Group Status at start of the cycle (circle)",
+                  "calculate": "instance('casedb')/casedb/case[@case_id = instance('commcaresession')/session/data/case_id]/group_status_cycle_start",
+                  "required": true,
+                  "options": [
+                    {
+                      "value": "supervised",
+                      "label": "Supervised"
+                    },
+                    {
+                      "value": "self-managed",
+                      "label": "Self-managed"
+                    }
+                  ]
+                },
+                {
+                  "id": "silc/members_registered_start",
+                  "type": "Int",
+                  "label": "4. Registered members when savings started this cycle",
+                  "calculate": "instance('casedb')/casedb/case[@case_id = instance('commcaresession')/session/data/case_id]/members_registered_start",
+                  "required": true
+                },
+                {
+                  "id": "silc/savings_reinvested_start_highercycle",
+                  "type": "Text",
+                  "label": "5. Savings reinvested at start of higher cycle (more than normal savings)",
+                  "calculate": "instance('casedb')/casedb/case[@case_id = instance('commcaresession')/session/data/case_id]/savings_reinvested_highercycle",
+                  "required": true
+                },
+                {
+                  "id": "silc/group_property_cycle_start",
+                  "type": "Text",
+                  "label": "6. Group property at start of cycle (purchase price)",
+                  "calculate": "instance('casedb')/casedb/case[@case_id = instance('commcaresession')/session/data/case_id]/group_property_cycle_start",
+                  "required": true
+                },
+                {
+                  "id": "silc/registered_members",
+                  "type": "Text",
+                  "label": "8. No. of registered members now",
+                  "required": true
+                },
+                {
+                  "id": "silc/no_attending_meeting",
+                  "type": "Text",
+                  "label": "10. No. of members attending this meeting",
+                  "required": true
+                },
+                {
+                  "id": "silc/no_of_droputs",
+                  "type": "Int",
+                  "label": "11. Number of dropouts this cycle (cumulative)",
+                  "required": true
+                },
+                {
+                  "id": "silc/cycle_savings_value",
+                  "type": "Text",
+                  "label": "12. Value of savings this cycle",
+                  "calculate": "instance('casedb')/casedb/case[@case_id = instance('commcaresession')/session/data/case_id]/cycle_savings_value",
+                  "required": true
+                },
+                {
+                  "id": "silc/value_of_loans_outstanding",
+                  "type": "Int",
+                  "label": "13. Value of loans outstanding",
+                  "required": true
+                },
+                {
+                  "id": "silc/no_of_loans_outstanding",
+                  "type": "Int",
+                  "label": "14. No. of loans outstanding",
+                  "calculate": "instance('casedb')/casedb/case[@case_id = instance('commcaresession')/session/data/case_id]/no_of_loans_outstanding",
+                  "required": true
+                },
+                {
+                  "id": "silc/written_off_loans_value",
+                  "type": "Text",
+                  "label": "15. Value of loan write-off this cycle (cumulative)",
+                  "calculate": "instance('casedb')/casedb/case[@case_id = instance('commcaresession')/session/data/case_id]/written_off_loans_value",
+                  "required": true
+                },
+                {
+                  "id": "silc/main_fund_cash_in_box",
+                  "type": "Text",
+                  "label": "16. Main Fund cash in box",
+                  "required": true
+                },
+                {
+                  "id": "silc/bank_balance",
+                  "type": "Text",
+                  "label": "17. Bank Balance",
+                  "required": true
+                },
+                {
+                  "id": "silc/bank_balance_socialother",
+                  "type": "Text",
+                  "label": "18. Balance in Social Fund and other funds",
+                  "calculate": "instance('casedb')/casedb/case[@case_id = instance('commcaresession')/session/data/case_id]/bank_balance_socialother",
+                  "required": true
+                },
+                {
+                  "id": "silc/group_property_held",
+                  "type": "Text",
+                  "label": "19. Group property held now (purchase price)",
+                  "required": true
+                },
+                {
+                  "id": "silc/value_of_external_debts",
+                  "type": "Int",
+                  "label": "20. Value of external debts",
+                  "calculate": "instance('casedb')/casedb/case[@case_id = instance('commcaresession')/session/data/case_id]/value_of_external_debts",
+                  "required": true
+                },
+                {
+                  "id": "silc/end-of-cycle_share-out_meeting",
+                  "type": "Select",
+                  "label": "21. End-of-cycle share-out meeting?",
+                  "required": true,
+                  "options": [
+                    {
+                      "value": "yes",
+                      "label": "Yes"
+                    },
+                    {
+                      "value": "no",
+                      "label": "No"
+                    }
+                  ]
+                },
+                {
+                  "id": "silc/contact_telephone_number_of_silc_group",
+                  "type": "PhoneNumber",
+                  "label": "22. Contact telephone number of SILC group",
+                  "constraint": "string-length(.) = 10"
+                },
+                {
+                  "id": "silc/meeting_frequency",
+                  "type": "Select",
+                  "label": "23. Meeting frequency",
+                  "calculate": "instance('casedb')/casedb/case[@case_id = instance('commcaresession')/session/data/case_id]/meeting_frequency",
+                  "required": true,
+                  "options": [
+                    {
+                      "value": "weekly",
+                      "label": "Weekly"
+                    },
+                    {
+                      "value": "biweekly",
+                      "label": "Biweekly"
+                    },
+                    {
+                      "value": "monthly",
+                      "label": "Monthly"
+                    },
+                    {
+                      "value": "other",
+                      "label": "Other"
+                    }
+                  ]
+                },
+                {
+                  "id": "silc/specify_meeting_frequency",
+                  "type": "Text",
+                  "label": "Specify Other meeting frequency",
+                  "relevant": "/data/silc/meeting_frequency = 'other'",
+                  "required": true
+                },
+                {
+                  "id": "silc/meeting_day",
+                  "type": "Select",
+                  "label": "24. Specify Meeting day",
+                  "calculate": "instance('casedb')/casedb/case[@case_id = instance('commcaresession')/session/data/case_id]/meeting_day",
+                  "required": true,
+                  "options": [
+                    {
+                      "value": "mo",
+                      "label": "Monday"
+                    },
+                    {
+                      "value": "tu",
+                      "label": "Tuesday"
+                    },
+                    {
+                      "value": "we",
+                      "label": "Wednesdy"
+                    },
+                    {
+                      "value": "th",
+                      "label": "Thursday"
+                    },
+                    {
+                      "value": "fr",
+                      "label": "Friday"
+                    },
+                    {
+                      "value": "sa",
+                      "label": "Saturday"
+                    },
+                    {
+                      "value": "su",
+                      "label": "Sunday"
+                    }
+                  ]
+                },
+                {
+                  "id": "silc/target_savings_member",
+                  "type": "Text",
+                  "label": "25. Target savings (per member per meeting)",
+                  "calculate": "instance('casedb')/casedb/case[@case_id = instance('commcaresession')/session/data/case_id]/target_savings_member",
+                  "required": true
+                },
+                {
+                  "id": "silc/planned_shareout_date",
+                  "type": "Date",
+                  "label": "26. Planned shareout date (Month / Year)",
+                  "constraint": ". >= today()",
+                  "required": true
+                },
+                {
+                  "id": "silc/amount_paid_psp_this_period",
+                  "type": "Int",
+                  "label": "27. Amount paid to PSP this period",
+                  "required": true
+                },
+                {
+                  "id": "silc/total_num_loans_disbursed_in_cycle",
+                  "type": "Int",
+                  "label": "28. Total number of loans disbursed in cycle",
+                  "required": true
+                },
+                {
+                  "id": "silc/total_value_of_loans_disbursed_in_cycle",
+                  "type": "Int",
+                  "label": "29. Total value of loans disbursed in cycle",
+                  "required": true
+                },
+                {
+                  "id": "silc/total_number_of_borrowers_in_cycle",
+                  "type": "Int",
+                  "label": "30. Total number of borrowers in cycle",
+                  "required": true
+                },
+                {
+                  "id": "silc/show_value_a",
+                  "type": "Label",
+                  "label": "A: CASH(16) + LOANS(13) + PROPERTY NOW(19) + BANK BALANCE(17) TOTAL AMOUNT:"
+                },
+                {
+                  "id": "silc/show_value_B",
+                  "type": "Label",
+                  "label": "B: SAVINGS(12) + PROPERTY START OF CYCLE(6) + DEBTS(20) TOTAL AMOUNT:"
+                },
+                {
+                  "id": "silc/show_a_less_b",
+                  "type": "Label",
+                  "label": "PROFIT"
+                },
+                {
+                  "id": "silc/value_a",
+                  "type": "DataBindOnly"
+                },
+                {
+                  "id": "silc/value_b",
+                  "type": "DataBindOnly"
+                },
+                {
+                  "id": "silc/group_profit",
+                  "type": "DataBindOnly"
+                }
+              ]
+            },
+            {
+              "id": "Demographic",
+              "type": "Group",
+              "label": "Demographical Questions",
+              "relevant": "false()",
+              "children": [
+                {
+                  "id": "Demographic/num_male_youth_15_29yrs",
+                  "type": "Int",
+                  "label": "1. Number of male youth (15 -29 yrs)",
+                  "required": true
+                },
+                {
+                  "id": "Demographic/num_female_youth_15_29yrs",
+                  "type": "Int",
+                  "label": "2. Number of female youth (15 -29 yrs)",
+                  "required": true
+                },
+                {
+                  "id": "Demographic/male_caregivers_CU5",
+                  "type": "Text",
+                  "label": "3. Number of male caregivers with children under 5",
+                  "required": true
+                },
+                {
+                  "id": "Demographic/female_caregivers_CU5",
+                  "type": "Text",
+                  "label": "4. Number of male caregivers with children under 5",
+                  "required": true
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "UPDATE GROUP DETAILS",
+          "type": "followup",
+          "case_preload": {
+            "Info/county": "county",
+            "Info/sub_county": "sub_county",
+            "Info/ward": "ward",
+            "group_info/community_name": "community_name",
+            "group_info/ip_name": "ip_name",
+            "group_info/name_SILC_grp": "case_name",
+            "group_info/grp_formation_date": "grp_formation_date"
+          },
+          "questions": [
+            {
+              "id": "grp_label",
+              "type": "Label",
+              "label": "GROUP NAME --------------------------------------------------- FORMATION DATE ---------------------------------------------------- GROUP CODE ---------------------------------------------------- COUNTY ----------------------------------------------------- SUB-COUNTY"
+            },
+            {
+              "id": "update",
+              "type": "Select",
+              "label": "Do you want to update group details?",
+              "options": [
+                {
+                  "value": "yes",
+                  "label": "Yes"
+                },
+                {
+                  "value": "no",
+                  "label": "No"
+                }
+              ]
+            },
+            {
+              "id": "Info",
+              "type": "Group",
+              "relevant": "/data/update = 'yes'",
+              "children": [
+                {
+                  "id": "Info/county",
+                  "type": "Select",
+                  "label": "County",
+                  "calculate": "instance('casedb')/casedb/case[@case_id = instance('commcaresession')/session/data/case_id]/county",
+                  "required": true,
+                  "lookup_table": {
+                    "tag": "ke_county",
+                    "value_field": "county_name",
+                    "label_field": "county_name"
+                  }
+                },
+                {
+                  "id": "Info/sub_county",
+                  "type": "Select",
+                  "label": "Sub-county",
+                  "calculate": "instance('casedb')/casedb/case[@case_id = instance('commcaresession')/session/data/case_id]/sub_county",
+                  "required": true,
+                  "lookup_table": {
+                    "tag": "ke_subcounty",
+                    "value_field": "sub_county_name",
+                    "label_field": "sub_county_name",
+                    "filter": "[county_id = /data/Info/county]"
+                  }
+                },
+                {
+                  "id": "Info/ward",
+                  "type": "Select",
+                  "label": "Ward",
+                  "calculate": "instance('casedb')/casedb/case[@case_id = instance('commcaresession')/session/data/case_id]/ward",
+                  "required": true,
+                  "lookup_table": {
+                    "tag": "ke_ward",
+                    "value_field": "ward_name",
+                    "label_field": "ward_name",
+                    "filter": "[sub_county_id = /data/Info/sub_county]"
+                  }
+                },
+                {
+                  "id": "Info/c_id",
+                  "type": "DataBindOnly"
+                },
+                {
+                  "id": "Info/sc_id",
+                  "type": "DataBindOnly"
+                },
+                {
+                  "id": "Info/w_id",
+                  "type": "DataBindOnly"
+                }
+              ]
+            },
+            {
+              "id": "group_info",
+              "type": "Group",
+              "relevant": "/data/update = 'yes'",
+              "children": [
+                {
+                  "id": "group_info/community_name",
+                  "type": "Text",
+                  "label": "Community Name",
+                  "calculate": "instance('casedb')/casedb/case[@case_id = instance('commcaresession')/session/data/case_id]/community_name",
+                  "required": true
+                },
+                {
+                  "id": "group_info/ip_name",
+                  "type": "Text",
+                  "label": "IP Name",
+                  "calculate": "instance('casedb')/casedb/case[@case_id = instance('commcaresession')/session/data/case_id]/ip_name",
+                  "required": true
+                },
+                {
+                  "id": "group_info/name_SILC_grp",
+                  "type": "Text",
+                  "label": "Name of SILC group",
+                  "calculate": "instance('casedb')/casedb/case[@case_id = instance('commcaresession')/session/data/case_id]/case_name",
+                  "required": true
+                },
+                {
+                  "id": "group_info/grp_formation_date",
+                  "type": "Date",
+                  "label": "Date of group formation",
+                  "calculate": "instance('casedb')/casedb/case[@case_id = instance('commcaresession')/session/data/case_id]/grp_formation_date",
+                  "constraint": ". <= today()",
+                  "required": true
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "SILC GROUP ATTENDANCE AND SLI TOOL",
+      "case_type": "service_mapping_members",
+      "_comment": "Member-level form for tracking individual caregiver attendance, health/nutrition/livelihoods messaging received (multi-select), referrals, and maternal health. Linked to parent group case.",
+      "forms": [
+        {
+          "name": "SILC GROUP ATTENDANCE & SLI TOOL - FOR CAREGIVERS",
+          "type": "survey",
+          "questions": [
+            {
+              "id": "group_member_details",
+              "type": "Group",
+              "label": "Group Member details",
+              "children": [
+                {
+                  "id": "group_member_details/SILC_case_file_name",
+                  "type": "DataBindOnly"
+                },
+                {
+                  "id": "group_member_details/SILC_group_name",
+                  "type": "DataBindOnly"
+                },
+                {
+                  "id": "group_member_details/anchor_group",
+                  "type": "DataBindOnly"
+                }
+              ]
+            },
+            {
+              "id": "demographic_information",
+              "type": "Group",
+              "label": "DEMOGRAPHIC INFORMATION",
+              "children": [
+                {
+                  "id": "demographic_information/type_of_session",
+                  "type": "MSelect",
+                  "label": "Type of session",
+                  "required": true,
+                  "options": [
+                    {
+                      "value": "M",
+                      "label": "Messaging"
+                    },
+                    {
+                      "value": "EL",
+                      "label": "Experiential Learning"
+                    },
+                    {
+                      "value": "T",
+                      "label": "training"
+                    },
+                    {
+                      "value": "S",
+                      "label": "SMS"
+                    }
+                  ]
+                },
+                {
+                  "id": "demographic_information/date_of_messaging",
+                  "type": "Date",
+                  "label": "Date of messaging, experiential learning, session/training (DD)",
+                  "constraint": ". <= today() and . >= date('2024-10-01')",
+                  "required": true
+                },
+                {
+                  "id": "demographic_information/pregnant_and_lactating",
+                  "type": "Select",
+                  "label": "Pregnant and Lactating",
+                  "required": true,
+                  "options": [
+                    {
+                      "value": "pregnant_and_lactating",
+                      "label": "Pregnant and Lactating"
+                    },
+                    {
+                      "value": "pregnant",
+                      "label": "Pregnant only"
+                    },
+                    {
+                      "value": "lactating",
+                      "label": "Lactating only"
+                    },
+                    {
+                      "value": "not_pregnant_lactating",
+                      "label": "Not Pregnant/Lactating"
+                    },
+                    {
+                      "value": "na",
+                      "label": "N/A"
+                    }
+                  ]
+                },
+                {
+                  "id": "demographic_information/is_the_respondent_disabled",
+                  "type": "Select",
+                  "label": "Is the respondent disabled",
+                  "required": true,
+                  "options": [
+                    {
+                      "value": "yes",
+                      "label": "Yes"
+                    },
+                    {
+                      "value": "no",
+                      "label": "No"
+                    }
+                  ]
+                },
+                {
+                  "id": "demographic_information/indicate_no_of_children_0_-_5_months",
+                  "type": "Int",
+                  "label": "Indicate No. of child(ren) 0 - 5 months",
+                  "constraint": ". < 6",
+                  "required": true
+                },
+                {
+                  "id": "demographic_information/indicate_no_of_children_6_-_23_months",
+                  "type": "Int",
+                  "label": "Indicate No. of child(ren) 6 - 23 months",
+                  "constraint": ". < 6",
+                  "required": true
+                },
+                {
+                  "id": "demographic_information/indicate_no_of_children_24_-_59_months",
+                  "type": "Int",
+                  "label": "Indicate No. of child(ren) 24 - 59 months",
+                  "constraint": ". < 6",
+                  "required": true
+                }
+              ]
+            },
+            {
+              "id": "messages_andor_experiential_learning_session",
+              "type": "Group",
+              "label": "MESSAGES AND/OR EXPERIENTIAL LEARNING SESSION",
+              "children": [
+                {
+                  "id": "messages_andor_experiential_learning_session/did_you_receive_any_health_and_nutrition_messaging",
+                  "type": "Select",
+                  "label": "Did you receive any Health & Nutrition messaging",
+                  "required": true,
+                  "options": [
+                    {
+                      "value": "yes",
+                      "label": "Yes"
+                    },
+                    {
+                      "value": "no",
+                      "label": "No"
+                    }
+                  ]
+                },
+                {
+                  "id": "messages_andor_experiential_learning_session/health__nutrition",
+                  "type": "MSelect",
+                  "label": "Health & Nutrition",
+                  "relevant": "/data/messages_andor_experiential_learning_session/did_you_receive_any_health_and_nutrition_messaging = 'yes'",
+                  "required": true,
+                  "options": [
+                    {
+                      "value": "maternal_nutrition_card_no_1_to_6",
+                      "label": "1. Maternal Nutrition  (Card No 1 to 6)"
+                    },
+                    {
+                      "value": "breastfeeding_card_no_7_to_18",
+                      "label": "2. Breastfeeding (Card No  7 to 18)"
+                    },
+                    {
+                      "value": "complementary_feeding_card_no_20_to_29",
+                      "label": "3. Complementary Feeding (Card No 20 to 29)"
+                    },
+                    {
+                      "value": "feeding_in_special_circumstances_card_no_30_to_33",
+                      "label": "4. Feeding in special circumstances  (Card No 30 to 33)"
+                    },
+                    {
+                      "value": "growth_monitoring__promotion_incl_chv_muac_card_38",
+                      "label": "5.Growth monitoring & promotion (incl CHV MUAC) Card 38"
+                    },
+                    {
+                      "value": "iron_folic_acid_suplementation_ifas",
+                      "label": "6. Iron & Folic Acid Suplementation (IFAS)"
+                    },
+                    {
+                      "value": "anc_attendance_skilled_delivery",
+                      "label": "7. ANC attendance & skilled delivery"
+                    },
+                    {
+                      "value": "follow_up_with_food_as_medicine",
+                      "label": "8. Follow up with food as medicine"
+                    },
+                    {
+                      "value": "social_accountability_using_community_chalkboardmuac_data",
+                      "label": "9. Social accountability using community chalkboard/MUAC data"
+                    }
+                  ]
+                },
+                {
+                  "id": "messages_andor_experiential_learning_session/did_you_receive_any_wash__essential_hygiene__sanitation_actions_messaging",
+                  "type": "Select",
+                  "label": "Did you receive any WASH & Essential Hygiene & Sanitation Actions messaging",
+                  "required": true,
+                  "options": [
+                    {
+                      "value": "yes",
+                      "label": "Yes"
+                    },
+                    {
+                      "value": "no",
+                      "label": "No"
+                    }
+                  ]
+                },
+                {
+                  "id": "messages_andor_experiential_learning_session/wash_essential_hygiene__sanitation_actions",
+                  "type": "MSelect",
+                  "label": "WASH & Essential Hygiene & Sanitation Actions (Card 34-37)",
+                  "relevant": "/data/messages_andor_experiential_learning_session/did_you_receive_any_wash__essential_hygiene__sanitation_actions_messaging = 'yes'",
+                  "required": true,
+                  "options": [
+                    {
+                      "value": "handwashing_at_5_critical_times",
+                      "label": "1. Handwashing at 5 critical times"
+                    },
+                    {
+                      "value": "use_of_latrines__proper_disposal_of_feaces",
+                      "label": "2. Use of latrines & proper disposal of feaces"
+                    },
+                    {
+                      "value": "food_safety__hygiene",
+                      "label": "3. Food safety & hygiene"
+                    },
+                    {
+                      "value": "healthy_play_areasenvironment",
+                      "label": "4. Healthy play areas/environment"
+                    },
+                    {
+                      "value": "water_treatment_at_point_of_use_pou",
+                      "label": "5. Water treatment at Point of Use (PoU)"
+                    },
+                    {
+                      "value": "construction_of_a_latrine-_steps_ladder",
+                      "label": "6. Construction of a latrine- steps ladder"
+                    }
+                  ]
+                },
+                {
+                  "id": "messages_andor_experiential_learning_session/did_you_receive_any_livelihoods_messaging",
+                  "type": "Select",
+                  "label": "Did you receive any Livelihoods messaging",
+                  "required": true,
+                  "options": [
+                    {
+                      "value": "yes",
+                      "label": "Yes"
+                    },
+                    {
+                      "value": "no",
+                      "label": "No"
+                    }
+                  ]
+                },
+                {
+                  "id": "messages_andor_experiential_learning_session/livelihoods",
+                  "type": "MSelect",
+                  "label": "Livelihoods",
+                  "relevant": "/data/messages_andor_experiential_learning_session/did_you_receive_any_livelihoods_messaging = 'yes'",
+                  "required": true,
+                  "options": [
+                    {
+                      "value": "crop_production__home_gardens_miycn_card_41",
+                      "label": "1. Crop Production / Home Gardens (MIYCN Card 41)"
+                    },
+                    {
+                      "value": "livestock_production__management",
+                      "label": "2. Livestock Production & Management  "
+                    },
+                    {
+                      "value": "youth_entrepreneurship",
+                      "label": "3. Youth Entrepreneurship"
+                    },
+                    {
+                      "value": "poultry_production",
+                      "label": "4. Poultry Production"
+                    },
+                    {
+                      "value": "fishery",
+                      "label": "5. Fishery"
+                    },
+                    {
+                      "value": "marketing",
+                      "label": "6. Marketing"
+                    },
+                    {
+                      "value": "business_management",
+                      "label": "7. Business management"
+                    },
+                    {
+                      "value": "gum__resin",
+                      "label": "8. Gum & resin"
+                    }
+                  ]
+                },
+                {
+                  "id": "messages_andor_experiential_learning_session/silc_membership",
+                  "type": "Select",
+                  "label": "Is the participant a SILC Member?",
+                  "required": true,
+                  "options": [
+                    {
+                      "value": "yes",
+                      "label": "Yes"
+                    },
+                    {
+                      "value": "no",
+                      "label": "No"
+                    }
+                  ]
+                },
+                {
+                  "id": "messages_andor_experiential_learning_session/angm_membership",
+                  "type": "Select",
+                  "label": "Is the participant a ANGM Member?",
+                  "required": true,
+                  "options": [
+                    {
+                      "value": "yes",
+                      "label": "Yes"
+                    },
+                    {
+                      "value": "no",
+                      "label": "No"
+                    }
+                  ]
+                },
+                {
+                  "id": "messages_andor_experiential_learning_session/mtmsg_membership",
+                  "type": "Select",
+                  "label": "Is the participant a M2MSG Member?",
+                  "required": true,
+                  "options": [
+                    {
+                      "value": "yes",
+                      "label": "Yes"
+                    },
+                    {
+                      "value": "no",
+                      "label": "No"
+                    }
+                  ]
+                },
+                {
+                  "id": "messages_andor_experiential_learning_session/did_you_receive_any_gysd_messaging",
+                  "type": "Select",
+                  "label": "Did you receive any GYSD messaging",
+                  "required": true,
+                  "options": [
+                    {
+                      "value": "yes",
+                      "label": "Yes"
+                    },
+                    {
+                      "value": "no",
+                      "label": "No"
+                    }
+                  ]
+                },
+                {
+                  "id": "messages_andor_experiential_learning_session/gysd",
+                  "type": "Group",
+                  "label": "GYSD",
+                  "children": [
+                    {
+                      "id": "messages_andor_experiential_learning_session/gysd/smart_couple_trainingsession",
+                      "type": "Select",
+                      "label": "1. Smart Couple Training/Session",
+                      "required": true,
+                      "options": [
+                        {
+                          "value": "yes",
+                          "label": "Yes"
+                        },
+                        {
+                          "value": "no",
+                          "label": "No"
+                        }
+                      ]
+                    },
+                    {
+                      "id": "messages_andor_experiential_learning_session/gysd/male_change_agent_session",
+                      "type": "Select",
+                      "label": "2. Male Change Agent Session",
+                      "required": true,
+                      "options": [
+                        {
+                          "value": "yes",
+                          "label": "Yes"
+                        },
+                        {
+                          "value": "no",
+                          "label": "No"
+                        }
+                      ]
+                    },
+                    {
+                      "id": "messages_andor_experiential_learning_session/gysd/life_skills",
+                      "type": "Select",
+                      "label": "3. Life Skills",
+                      "required": true,
+                      "options": [
+                        {
+                          "value": "yes",
+                          "label": "Yes"
+                        },
+                        {
+                          "value": "no",
+                          "label": "No"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "id": "messages_andor_experiential_learning_session/was_there_any_referral_made",
+                  "type": "Select",
+                  "label": "Was there any referral made",
+                  "required": true,
+                  "options": [
+                    {
+                      "value": "yes",
+                      "label": "Yes"
+                    },
+                    {
+                      "value": "no",
+                      "label": "No"
+                    }
+                  ]
+                },
+                {
+                  "id": "messages_andor_experiential_learning_session/referrals_made",
+                  "type": "MSelect",
+                  "label": "Referrals made",
+                  "relevant": "/data/messages_andor_experiential_learning_session/was_there_any_referral_made = 'yes'",
+                  "required": true,
+                  "options": [
+                    {
+                      "value": "ifas",
+                      "label": "1. IFAS"
+                    },
+                    {
+                      "value": "ante_-_natal_care_anc",
+                      "label": "2. Ante - Natal Care (ANC)"
+                    },
+                    {
+                      "value": "post_-_natal_care_pnc",
+                      "label": "3. Post - Natal Care (PNC)"
+                    },
+                    {
+                      "value": "further_miycn_counselling",
+                      "label": "4. Further MIYCN Counselling"
+                    },
+                    {
+                      "value": "skilled_delivery",
+                      "label": "5. Skilled delivery"
+                    },
+                    {
+                      "value": "growth_monitoring_and_promotion_gmp",
+                      "label": "6. Growth Monitoring and Promotion (GMP)"
+                    },
+                    {
+                      "value": "other_hn_related_referral_specify",
+                      "label": "7. Other H&N related referral (Specify)"
+                    },
+                    {
+                      "value": "social_services_registration_for_national_identification_cards",
+                      "label": "8. Social Services: Registration for National Identification Cards"
+                    },
+                    {
+                      "value": "social_services_national_social_health_insurance_fund",
+                      "label": "9. Social Services: national social health insurance fund"
+                    },
+                    {
+                      "value": "social_services_safety_net_program",
+                      "label": "10. Social Services: Safety Net Program"
+                    }
+                  ]
+                },
+                {
+                  "id": "messages_andor_experiential_learning_session/specify",
+                  "type": "Int",
+                  "label": "Specify",
+                  "relevant": "selected(/data/messages_andor_experiential_learning_session/referrals_made, 'other_hn_related_referral_specify')",
+                  "required": true
+                },
+                {
+                  "id": "messages_andor_experiential_learning_session/completed_referral",
+                  "type": "Select",
+                  "label": "Completed Referral",
+                  "required": true,
+                  "options": [
+                    {
+                      "value": "yes",
+                      "label": "Yes"
+                    },
+                    {
+                      "value": "no",
+                      "label": "No"
+                    },
+                    {
+                      "value": "not_applicable",
+                      "label": "Not Applicable"
+                    }
+                  ]
+                },
+                {
+                  "id": "messages_andor_experiential_learning_session/livebirths",
+                  "type": "Group",
+                  "label": "Livebirths",
+                  "children": [
+                    {
+                      "id": "messages_andor_experiential_learning_session/livebirths/did_pregnant_woman_give_birth_this_month",
+                      "type": "Select",
+                      "label": "1. Did \"Pregnant\" woman give birth this month?",
+                      "required": true,
+                      "options": [
+                        {
+                          "value": "yes",
+                          "label": "Yes"
+                        },
+                        {
+                          "value": "no",
+                          "label": "No"
+                        }
+                      ]
+                    },
+                    {
+                      "id": "messages_andor_experiential_learning_session/livebirths/fill_in_the_number_of_anc_visits_before_birth_as_recorded_in_the_healthcard",
+                      "type": "Int",
+                      "label": "2. Fill in the number of ANC visits before birth as recorded in the healthcard",
+                      "relevant": "/data/messages_andor_experiential_learning_session/livebirths/did_pregnant_woman_give_birth_this_month = 'yes'",
+                      "constraint": ". > 0 or . < 9",
+                      "required": true
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

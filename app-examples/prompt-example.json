@@ -1,0 +1,123 @@
+{
+  "app_name": "CHW Community Health",
+  "modules": [
+    {
+      "name": "Patient Registration",
+      "case_type": "patient",
+      "forms": [{
+        "name": "Register Patient",
+        "type": "registration",
+        "case_name_field": "full_name",
+        "case_properties": {
+          "age": "age", "gender": "gender", "village": "village",
+          "phone_number": "phone", "pregnancy_status": "pregnant",
+          "has_diabetes": "dm", "has_hypertension": "htn", "risk_score": "risk"
+        },
+        "questions": [
+          {"id": "full_name", "type": "text", "label": "Full Name", "required": true},
+          {"id": "dob", "type": "date", "label": "Date of Birth", "required": true},
+          {"id": "age", "type": "int", "label": "Age", "required": true, "constraint": ". >= 0 and . <= 120", "constraint_msg": "Age must be 0-120"},
+          {"id": "gender", "type": "select1", "label": "Gender", "required": true, "options": [
+            {"value": "male", "label": "Male"}, {"value": "female", "label": "Female"}
+          ]},
+          {"id": "village", "type": "text", "label": "Village", "required": true},
+          {"id": "phone", "type": "phone", "label": "Phone Number"},
+          {"id": "pregnant", "type": "select1", "label": "Currently Pregnant?", "relevant": "/data/gender = 'female'", "options": [
+            {"value": "yes", "label": "Yes"}, {"value": "no", "label": "No"}
+          ]},
+          {"id": "medical_history", "type": "group", "label": "Medical History", "children": [
+            {"id": "dm", "type": "select1", "label": "Diabetes?", "options": [{"value": "yes", "label": "Yes"}, {"value": "no", "label": "No"}]},
+            {"id": "htn", "type": "select1", "label": "Hypertension?", "options": [{"value": "yes", "label": "Yes"}, {"value": "no", "label": "No"}]},
+            {"id": "hiv", "type": "select1", "label": "HIV Positive?", "options": [{"value": "yes", "label": "Yes"}, {"value": "no", "label": "No"}]}
+          ]},
+          {"id": "risk", "type": "hidden", "label": "Risk Score", "calculate": "if(/data/age > 60, 2, 0) + if(/data/medical_history/dm = 'yes', 2, 0) + if(/data/medical_history/htn = 'yes', 2, 0) + if(/data/medical_history/hiv = 'yes', 1, 0) + if(/data/pregnant = 'yes', 1, 0)"}
+        ]
+      }]
+    },
+    {
+      "name": "Home Visits",
+      "case_type": "patient",
+      "case_list_columns": [
+        {"field": "village", "header": "Village"},
+        {"field": "risk_score", "header": "Risk Score"}
+      ],
+      "forms": [{
+        "name": "Home Visit",
+        "type": "followup",
+        "case_preload": {
+          "display_name": "name",
+          "display_risk": "risk_score",
+          "display_pregnancy": "pregnancy_status"
+        },
+        "case_properties": {
+          "last_visit_date": "visit_date",
+          "last_weight": "weight",
+          "last_bp_systolic": "bp_systolic",
+          "current_risk_level": "risk_level"
+        },
+        "questions": [
+          {"id": "display_name", "type": "text", "label": "Patient Name", "readonly": true},
+          {"id": "display_risk", "type": "text", "label": "Risk Score", "readonly": true},
+          {"id": "display_pregnancy", "type": "text", "label": "Pregnancy Status", "readonly": true},
+          {"id": "visit_date", "type": "date", "label": "Visit Date", "required": true},
+          {"id": "weight", "type": "decimal", "label": "Weight (kg)", "required": true, "constraint": ". >= 1 and . <= 300"},
+          {"id": "bp_systolic", "type": "decimal", "label": "BP Systolic", "required": true, "constraint": ". >= 50 and . <= 300"},
+          {"id": "bp_diastolic", "type": "decimal", "label": "BP Diastolic", "required": true},
+          {"id": "symptoms", "type": "select", "label": "Symptoms", "options": [
+            {"value": "fever", "label": "Fever"}, {"value": "cough", "label": "Cough"},
+            {"value": "bleeding", "label": "Bleeding"}, {"value": "headache", "label": "Headache"},
+            {"value": "none", "label": "None"}
+          ]},
+          {"id": "visit_notes", "type": "text", "label": "Notes"},
+          {"id": "risk_level", "type": "hidden", "label": "Risk Level", "calculate": "if(/data/bp_systolic >= 180 or selected(/data/symptoms, 'bleeding'), 'high', if(/data/bp_systolic >= 140 or /data/display_risk >= 4, 'medium', 'low'))"}
+        ]
+      }]
+    },
+    {
+      "name": "Referrals",
+      "case_type": "patient",
+      "case_list_columns": [
+        {"field": "village", "header": "Village"},
+        {"field": "current_risk_level", "header": "Risk"}
+      ],
+      "forms": [
+        {
+          "name": "Create Referral",
+          "type": "followup",
+          "child_cases": [{
+            "case_type": "referral",
+            "case_name_field": "referral_label",
+            "case_properties": {"referral_type": "ref_type", "facility_name": "facility", "urgency_level": "urgency", "referral_reason": "reason"}
+          }],
+          "questions": [
+            {"id": "ref_type", "type": "select1", "label": "Referral Type", "required": true, "options": [
+              {"value": "emergency", "label": "Emergency"}, {"value": "anc", "label": "Antenatal Care"}, {"value": "chronic", "label": "Chronic Care"}
+            ]},
+            {"id": "facility", "type": "text", "label": "Facility Name", "required": true},
+            {"id": "urgency", "type": "select1", "label": "Urgency", "relevant": "/data/ref_type = 'emergency' or /data/ref_type = 'chronic'", "options": [
+              {"value": "immediate", "label": "Immediate"}, {"value": "within_24h", "label": "Within 24 Hours"}, {"value": "within_week", "label": "Within 1 Week"}
+            ]},
+            {"id": "reason", "type": "text", "label": "Reason for Referral", "required": true},
+            {"id": "referral_date", "type": "hidden", "label": "Referral Date", "calculate": "today()"},
+            {"id": "referral_label", "type": "hidden", "label": "Referral Label", "calculate": "concat(/data/ref_type, ' - ', /data/facility)"}
+          ]
+        },
+        {
+          "name": "Referral Outcome",
+          "type": "followup",
+          "case_preload": {"display_type": "referral_type", "display_facility": "facility_name"},
+          "close_case": true,
+          "questions": [
+            {"id": "display_type", "type": "text", "label": "Referral Type", "readonly": true},
+            {"id": "display_facility", "type": "text", "label": "Facility", "readonly": true},
+            {"id": "outcome_date", "type": "date", "label": "Outcome Date", "required": true},
+            {"id": "outcome_result", "type": "select1", "label": "Outcome", "required": true, "options": [
+              {"value": "completed", "label": "Completed"}, {"value": "not_done", "label": "Not Done"}, {"value": "refused", "label": "Refused"}
+            ]},
+            {"id": "outcome_notes", "type": "text", "label": "Notes"}
+          ]
+        }
+      ]
+    }
+  ]
+}

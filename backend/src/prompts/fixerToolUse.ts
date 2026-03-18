@@ -70,6 +70,12 @@ Child case properties follow the same reserved word rules. Rename the property (
 ### "child_cases repeat_context is not a repeat group"
 The repeat_context must reference a question id of type "repeat" in the form. Fix the reference.
 
+### "has cyclical calculate — references itself"
+A hidden calculated field's calculate expression references its own question path (e.g. /data/risk_score references /data/risk_score). This creates an infinite loop. Fix by referencing OTHER question paths to compute the value, not the field itself.
+
+### "Logic is cyclical, referencing itself"
+Same as above — a calculate expression creates a circular dependency. The calculate must only reference other questions, never its own path.
+
 ## Key Rules
 - Use "text" with "readonly": true for display-only preloaded fields, NOT "trigger"
 - Labels should be clear and professional (e.g. "Patient Name", not "Patient Name (loaded from case)")

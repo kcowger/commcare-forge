@@ -34,12 +34,15 @@ export function expandToHqJson(compact: CompactApp): Record<string, any> {
   for (let mIdx = 0; mIdx < compactModules.length; mIdx++) {
     const cm = compactModules[mIdx]
     const moduleUniqueId = genHexId()
-    const hasCases = cm.case_type && (cm.forms || []).some(f => f.type !== 'survey')
+    // A module "has cases" if it has a case_type AND either has case forms or is a case-list-only module (0 forms)
+    const cmForms = cm.forms || []
+    const hasCaseForms = cmForms.some(f => f.type !== 'survey')
+    const isCaseListOnly = cm.case_type && cmForms.length === 0
+    const hasCases = cm.case_type && (hasCaseForms || isCaseListOnly)
     const caseType = hasCases ? cm.case_type! : ''
 
     const forms: any[] = []
 
-    const cmForms = cm.forms || []
     for (let fIdx = 0; fIdx < cmForms.length; fIdx++) {
       const cf = cmForms[fIdx]
       const formUniqueId = genHexId()
@@ -89,7 +92,7 @@ export function expandToHqJson(compact: CompactApp): Record<string, any> {
       search_config: { doc_type: DOC_TYPES.CaseSearch, properties: [], default_properties: [], include_closed: false },
       display_style: 'list',
       media_image: {}, media_audio: {}, custom_icons: [],
-      is_training_module: false, module_filter: null, auto_select_case: false,
+      is_training_module: false, module_filter: cm.module_filter || null, auto_select_case: false,
       parent_select: { active: false, module_id: null },
       comment: ''
     })
@@ -657,6 +660,15 @@ export function validateCompact(compact: CompactApp): string[] {
               const warnings = validateXPath(expr)
               for (const w of warnings) {
                 errors.push(`Question "${q.id}" in "${formName}" ${field}: ${w.message}`)
+              }
+              // Detect cyclical references: calculate must not reference its own question path
+              if (field === 'calculate' && (expr.includes(`/data/${q.id}`) || expr.includes(`/${q.id}`))) {
+                // Check it's actually a self-reference (not just a substring match)
+                const selfRef = `/data/${q.id}`
+                const selfRefNested = new RegExp(`/data/[^/]+/${q.id}(?![a-zA-Z0-9_])`)
+                if (expr.includes(selfRef) && !expr.includes(`${selfRef}/`)) {
+                  errors.push(`Question "${q.id}" in "${formName}" has cyclical calculate — references itself`)
+                }
               }
             }
           }

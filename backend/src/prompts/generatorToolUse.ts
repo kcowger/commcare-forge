@@ -11,7 +11,67 @@
  * that information now lives in the Zod schema's .describe() strings,
  * which Claude sees in the tool definition.
  */
+import { readFileSync } from 'fs'
+import { join, dirname } from 'path'
+import { fileURLToPath } from 'url'
+
+// Load the production-quality example at import time
+let EXAMPLE_APP = ''
+try {
+  // Works in both dev (source) and packaged (compiled) modes
+  const examplePath = join(dirname(fileURLToPath(import.meta.url)), '../../app-examples/prompt-example.json')
+  EXAMPLE_APP = readFileSync(examplePath, 'utf-8').trim()
+} catch {
+  // Fallback if file not found (e.g. in test environment without the file)
+  EXAMPLE_APP = '(example not available)'
+}
+
 export const GENERATOR_TOOL_USE_PROMPT = `You generate CommCare app definitions by calling the submit_app_definition tool. Do not output JSON in text — call the tool.
+
+## Production-Quality Patterns — Learn from Real Apps
+
+The best CommCare apps follow these patterns (extracted from production apps with 50+ modules):
+
+### Case Property Design
+- Save 5-15 case properties per registration form (not just 1-2). Think about what follow-up forms will need.
+- Followup forms should preload 3-8 case properties for display (patient name, key status fields, identifiers).
+- Use descriptive property names: "pregnancy_status", "risk_score", "last_visit_date" — not "status" or "date" (those are reserved).
+
+### Hidden Calculated Fields
+Production apps use hidden calculated fields extensively for:
+- Risk scores: \`if(/data/age > 60, 2, 0) + if(/data/medical_history/dm = 'yes', 2, 0)\`
+- Auto-generated labels: \`concat(/data/ref_type, ' - ', /data/facility)\`
+- Dates: \`today()\`
+- Classification: \`if(/data/bp_systolic >= 180, 'high', if(/data/bp_systolic >= 140, 'medium', 'low'))\`
+- Multi-select checks: \`if(selected(/data/symptoms, 'bleeding'), 'urgent', 'routine')\`
+Include 2-5 hidden calculated fields per form when appropriate.
+
+### Skip Logic (relevant)
+Use relevant expressions to show/hide questions based on previous answers:
+- Gender-specific: \`relevant: "/data/gender = 'female'"\`
+- Conditional sections: \`relevant: "/data/has_complications = 'yes'"\`
+- Multi-select dependent: \`relevant: "selected(/data/services, 'anc')"\`
+
+### Constraints
+Add constraints for data quality:
+- Age: \`. >= 0 and . <= 120\`
+- Weight: \`. >= 1 and . <= 300\`
+- Blood pressure: \`. >= 50 and . <= 300\`
+- Phone: \`regex(., '^[0-9]{10}$')\`
+
+### Child Cases
+Use child cases for entities that belong to a parent:
+- Patient → Referral, Patient → Visit record, Mother → Pregnancy
+- School → Student, Group → Member, Household → Individual
+- Set case_name_field to a hidden calculated field: \`concat(/data/type, ' - ', /data/date)\`
+
+### Case List Columns
+Always include 2-4 case_list_columns showing the most useful properties (village, status, date, risk level). The case name is shown automatically.
+
+### Example: Production-Quality CHW App
+\`\`\`json
+${EXAMPLE_APP}
+\`\`\`
 
 ## Smart Type Selection — ALWAYS use the most specific type
 - Phone numbers, mobile numbers, contact numbers, numeric IDs → "phone" (NOT "text")
