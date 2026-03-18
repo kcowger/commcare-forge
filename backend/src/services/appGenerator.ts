@@ -455,11 +455,16 @@ export class AppGenerator {
       }
     }
     // Also count subcases as registered types
+    const subcaseTypes = new Map<string, string>() // case_type → form that creates it
     for (const mod of modules) {
       for (const form of mod.forms || []) {
+        const fname = form.name?.en || 'Unknown'
         for (const sc of form.actions?.subcases || []) {
           if (sc.case_type && sc.condition?.type === 'always') {
             registeredCaseTypes.add(sc.case_type)
+            if (!subcaseTypes.has(sc.case_type)) {
+              subcaseTypes.set(sc.case_type, fname)
+            }
           }
         }
       }
@@ -467,6 +472,15 @@ export class AppGenerator {
     for (const [ct, fname] of followupCaseTypes) {
       if (!registeredCaseTypes.has(ct)) {
         errors.push(`Case type "${ct}" for form "${fname}" does not exist — no registration form creates this case type`)
+      }
+    }
+
+    // Every child case type created by subcases must have a module with that case_type
+    // so HQ can manage/display those cases
+    const moduleCaseTypes = new Set(modules.map((m: any) => m.case_type).filter(Boolean))
+    for (const [ct, fname] of subcaseTypes) {
+      if (!moduleCaseTypes.has(ct)) {
+        errors.push(`Case type "${ct}" created by "${fname}" has no module to manage it — add a module with case_type "${ct}" and a followup form`)
       }
     }
 

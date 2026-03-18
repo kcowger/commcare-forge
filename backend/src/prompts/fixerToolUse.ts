@@ -82,6 +82,9 @@ A followup form references a case_type, but no registration form in the app crea
 2. Changing the form type to "survey" if case management isn't needed
 3. Making sure the module's case_type matches an existing registration form's module case_type
 
+### "created by ... has no module to manage it"
+A child_case creates a new case type but no module in the app has that case_type set. HQ needs a module to display and manage those child cases. Fix by adding a new module with that case_type and at least one followup form for viewing/updating those cases.
+
 ### "has no forms or case list" / "has no forms and case list is not enabled"
 A module has 0 forms. Either add at least one form, or remove the empty module. Case-list-only modules are an advanced pattern — prefer adding forms instead.
 
