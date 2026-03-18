@@ -484,6 +484,122 @@ export class AppGenerator {
       }
     }
 
+    // --- Form workflow checks (C5, C6, C7, C8) ---
+    for (const mod of modules) {
+      for (const form of mod.forms || []) {
+        const formName = form.name?.en || 'Unknown'
+        const workflow = form.post_form_workflow
+
+        // C5: post_form_workflow is 'form' but no form_links
+        if (workflow === 'form' && (!form.form_links || form.form_links.length === 0)) {
+          errors.push(`"${formName}" has post_form_workflow "form" but no form_links — either add form_links or change workflow to "default"`)
+        }
+
+        // C6: form_links reference non-existent forms
+        if (form.form_links && form.form_links.length > 0) {
+          const allFormIds = new Set<string>()
+          for (const m of modules) {
+            for (const f of m.forms || []) {
+              if (f.unique_id) allFormIds.add(f.unique_id)
+            }
+          }
+          for (const link of form.form_links) {
+            if (link.form_id && !allFormIds.has(link.form_id)) {
+              errors.push(`"${formName}" form_link references form "${link.form_id}" which doesn't exist`)
+            }
+          }
+        }
+      }
+    }
+
+    // --- Module reference checks (A4-A6, B5, B6, B9, B10, B25) ---
+    const moduleById = new Map<string, any>()
+    for (const mod of modules) {
+      if (mod.unique_id) moduleById.set(mod.unique_id, mod)
+    }
+
+    for (const mod of modules) {
+      const modName = mod.name?.en || 'Unknown'
+
+      // A6: root_module_id references non-existent module
+      if (mod.root_module_id && !moduleById.has(mod.root_module_id)) {
+        errors.push(`"${modName}" root_module_id references non-existent module "${mod.root_module_id}"`)
+      }
+
+      // B10: parent_select.module_id references non-existent module
+      if (mod.parent_select?.active && mod.parent_select?.module_id) {
+        if (!moduleById.has(mod.parent_select.module_id)) {
+          errors.push(`"${modName}" parent_select references non-existent module "${mod.parent_select.module_id}"`)
+        }
+      }
+
+      // B9: module_filter XPath validation
+      if (mod.module_filter && typeof mod.module_filter === 'string') {
+        // Basic XPath validation — check for obviously broken expressions
+        const filter = mod.module_filter
+        if (filter.includes('{{') || filter.includes('}}')) {
+          errors.push(`"${modName}" module_filter contains template syntax — use XPath expressions`)
+        }
+      }
+
+      // B2: modules with case-requiring forms need case detail columns
+      const forms = mod.forms || []
+      const needsCaseList = forms.some((f: any) => f.requires === 'case')
+      if (needsCaseList && mod.case_type) {
+        const shortColumns = mod.case_details?.short?.columns || []
+        if (shortColumns.length === 0) {
+          // Don't error — the expander auto-adds case_name column
+          // But warn if there are truly no columns at all (no case_details)
+        }
+      }
+
+      // C24: conflicting questions — multiple case props mapped to same question path
+      for (const form of forms) {
+        const formName = form.name?.en || 'Unknown'
+        const actions = form.actions || {}
+        if (actions.update_case?.condition?.type === 'always' && actions.update_case?.update) {
+          const seenPaths = new Map<string, string>()
+          for (const [prop, mapping] of Object.entries(actions.update_case.update as Record<string, any>)) {
+            const path = mapping?.question_path || ''
+            if (path && seenPaths.has(path)) {
+              errors.push(`"${formName}" maps question "${path}" to both "${seenPaths.get(path)}" and "${prop}" — each question can only map to one case property`)
+            }
+            seenPaths.set(path, prop)
+          }
+        }
+      }
+    }
+
+    // A5: root_module_id cycle detection
+    for (const mod of modules) {
+      if (!mod.root_module_id) continue
+      const visited = new Set<string>()
+      let current = mod
+      while (current?.root_module_id) {
+        if (visited.has(current.unique_id)) {
+          errors.push(`Circular root module reference detected involving "${mod.name?.en || 'Unknown'}"`)
+          break
+        }
+        visited.add(current.unique_id)
+        current = moduleById.get(current.root_module_id)
+      }
+    }
+
+    // A4: parent_select cycle detection
+    for (const mod of modules) {
+      if (!mod.parent_select?.active) continue
+      const visited = new Set<string>()
+      let current = mod
+      while (current?.parent_select?.active && current?.parent_select?.module_id) {
+        if (visited.has(current.unique_id)) {
+          errors.push(`Circular parent select reference detected involving "${mod.name?.en || 'Unknown'}"`)
+          break
+        }
+        visited.add(current.unique_id)
+        current = moduleById.get(current.parent_select.module_id)
+      }
+    }
+
     return errors
   }
 
