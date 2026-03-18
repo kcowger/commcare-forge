@@ -12,11 +12,14 @@ export default function ProgressTracker({ status, message, attempt, filesDetecte
   const isSuccess = status === 'success'
   const isFailed = status === 'failed'
   const [elapsed, setElapsed] = useState(0)
+  const [recentMessages, setRecentMessages] = useState<string[]>([])
   const startRef = useRef(Date.now())
+  const prevMessageRef = useRef('')
 
   useEffect(() => {
     startRef.current = Date.now()
     setElapsed(0)
+    setRecentMessages([])
   }, [status === 'success' || status === 'failed' ? 'done' : 'active'])
 
   useEffect(() => {
@@ -27,99 +30,135 @@ export default function ProgressTracker({ status, message, attempt, filesDetecte
     return () => clearInterval(interval)
   }, [isActive])
 
+  // Track message history for the activity log
+  useEffect(() => {
+    if (message && message !== prevMessageRef.current && isActive) {
+      prevMessageRef.current = message
+      setRecentMessages(prev => {
+        const next = [...prev, message]
+        return next.slice(-6) // Keep last 6 messages
+      })
+    }
+  }, [message, isActive])
+
   const formatTime = (secs: number) => {
     const m = Math.floor(secs / 60)
     const s = secs % 60
     return m > 0 ? `${m}m ${s}s` : `${s}s`
   }
 
-  // Map status to step number
-  const stepMap: Record<string, number> = { generating: 1, validating: 2, fixing: 2, success: 3, failed: 3 }
-  const currentStep = stepMap[status] || 1
-  const steps = ['Generate', 'Validate', 'Done']
+  // Map status to progress percentage (approximate)
+  const progressMap: Record<string, number> = {
+    generating: 40,
+    validating: 70,
+    fixing: 60,
+    success: 100,
+    failed: 100
+  }
+  const progressPct = progressMap[status] || 0
+
+  // Phase labels
+  const phases = [
+    { key: 'generating', label: 'AI Generation', icon: '1' },
+    { key: 'validating', label: 'Validation', icon: '2' },
+    { key: 'done', label: 'Export', icon: '3' },
+  ]
+  const currentPhaseIdx = status === 'generating' ? 0 : (status === 'validating' || status === 'fixing') ? 1 : 2
 
   return (
-    <div className={`rounded-xl border px-4 py-3 text-sm ${
+    <div className={`rounded-xl border px-5 py-4 ${
       isSuccess ? 'border-accent/30 bg-accent/5' :
       isFailed ? 'border-red-500/30 bg-red-500/5' :
-      'border-white/10 bg-white/5'
+      'border-white/10 bg-white/[0.03]'
     }`}>
-      {/* Step indicators */}
+      {/* Phase steps */}
       {isActive && (
-        <div className="flex items-center gap-1 mb-3">
-          {steps.map((step, i) => {
-            const stepNum = i + 1
-            const isCurrentStep = stepNum === currentStep
-            const isCompleted = stepNum < currentStep
+        <div className="flex items-center gap-2 mb-4">
+          {phases.map((phase, i) => {
+            const isCurrent = i === currentPhaseIdx
+            const isDone = i < currentPhaseIdx
             return (
-              <React.Fragment key={step}>
-                <div className={`flex items-center gap-1.5 ${
-                  isCurrentStep ? 'text-accent' : isCompleted ? 'text-accent/60' : 'text-white/20'
+              <React.Fragment key={phase.key}>
+                <div className={`flex items-center gap-2 ${
+                  isCurrent ? 'text-accent' : isDone ? 'text-accent/60' : 'text-white/20'
                 }`}>
-                  <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${
-                    isCurrentStep ? 'bg-accent text-white' :
-                    isCompleted ? 'bg-accent/20 text-accent' :
+                  <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold transition-all ${
+                    isCurrent ? 'bg-accent text-white ring-2 ring-accent/30' :
+                    isDone ? 'bg-accent/20 text-accent' :
                     'bg-white/5 text-white/30'
                   }`}>
-                    {isCompleted ? (
-                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                    {isDone ? (
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
                         <polyline points="20 6 9 17 4 12" />
                       </svg>
-                    ) : stepNum}
+                    ) : phase.icon}
                   </div>
-                  <span className="text-xs font-medium">{step}</span>
+                  <span className="text-xs font-medium">{phase.label}</span>
                 </div>
-                {i < steps.length - 1 && (
-                  <div className={`flex-1 h-px mx-1 ${isCompleted ? 'bg-accent/30' : 'bg-white/10'}`} />
+                {i < phases.length - 1 && (
+                  <div className={`flex-1 h-0.5 mx-1 rounded-full transition-all ${isDone ? 'bg-accent/40' : 'bg-white/10'}`} />
                 )}
               </React.Fragment>
             )
           })}
-          <span className="text-white/30 ml-auto text-xs tabular-nums">
+          <span className="text-white/30 ml-auto text-xs tabular-nums font-mono">
             {formatTime(elapsed)}
           </span>
         </div>
       )}
 
-      {/* Status line */}
+      {/* Progress bar */}
+      {isActive && (
+        <div className="h-1.5 bg-white/5 rounded-full mb-3 overflow-hidden">
+          <div
+            className="h-full bg-accent rounded-full transition-all duration-700 ease-out"
+            style={{
+              width: `${progressPct}%`,
+              animation: status === 'generating' ? 'pulse 2s ease-in-out infinite' : undefined,
+            }}
+          />
+        </div>
+      )}
+
+      {/* Current status */}
       <div className="flex items-center gap-3">
         {isActive && (
-          <svg width="16" height="16" viewBox="0 0 24 24" className="animate-spin text-accent shrink-0">
+          <svg width="18" height="18" viewBox="0 0 24 24" className="animate-spin text-accent shrink-0">
             <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" fill="none" opacity="0.25" />
             <path d="M12 2a10 10 0 019.95 9" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" />
           </svg>
         )}
         {isSuccess && (
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-accent shrink-0">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-accent shrink-0">
             <path d="M22 11.08V12a10 10 0 11-5.93-9.14" />
             <polyline points="22 4 12 14.01 9 11.01" />
           </svg>
         )}
         {isFailed && (
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-red-400 shrink-0">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-red-400 shrink-0">
             <circle cx="12" cy="12" r="10" />
             <line x1="15" y1="9" x2="9" y2="15" />
             <line x1="9" y1="9" x2="15" y2="15" />
           </svg>
         )}
-        <span className={`text-xs ${isSuccess ? 'text-accent' : isFailed ? 'text-red-400' : 'text-white/70'} break-words`}>
+        <span className={`text-sm font-medium ${isSuccess ? 'text-accent' : isFailed ? 'text-red-400' : 'text-white/80'}`}>
           {message}
-          {(status === 'validating' || status === 'fixing') && attempt > 0 && (
-            <span className="text-white/30 ml-2">(attempt {attempt})</span>
+          {(status === 'fixing') && attempt > 0 && (
+            <span className="text-white/30 ml-2 text-xs">(fixing attempt {attempt})</span>
           )}
         </span>
       </div>
 
-      {/* Files detected during generation */}
-      {filesDetected && filesDetected.length > 0 && isActive && (
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {filesDetected.map((file) => (
-            <span key={file} className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-accent/10 text-[11px] text-accent/80">
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      {/* Activity log — shows what was built */}
+      {isActive && recentMessages.length > 1 && (
+        <div className="mt-3 pl-8 border-l border-white/5 ml-2 space-y-1">
+          {recentMessages.slice(0, -1).map((msg, i) => (
+            <div key={i} className="flex items-center gap-2 text-xs text-white/30">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="shrink-0 text-accent/40">
                 <polyline points="20 6 9 17 4 12" />
               </svg>
-              {file}
-            </span>
+              {msg}
+            </div>
           ))}
         </div>
       )}
