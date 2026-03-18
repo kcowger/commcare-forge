@@ -104,9 +104,25 @@ export class AppGenerator {
 
     let compact: CompactApp
     try {
+      // Parse streaming JSON to show real-time progress as Claude builds each module/form
+      let streamBuffer = ''
+      const seenNames = new Set<string>()
+      const onStreamChunk = (chunk: string) => {
+        streamBuffer += chunk
+        // Extract "name": "..." patterns from the stream to show what's being built
+        const nameMatches = streamBuffer.match(/"name"\s*:\s*"([^"]+)"/g)
+        if (nameMatches) {
+          const latest = nameMatches[nameMatches.length - 1].match(/"name"\s*:\s*"([^"]+)"/)
+          if (latest && !seenNames.has(latest[1])) {
+            seenNames.add(latest[1])
+            report('generating', `Building: ${latest[1]}...`, 0)
+          }
+        }
+      }
+
       compact = await this.claudeService.sendOneShotWithTool<CompactApp>(
         GENERATOR_TOOL_USE_PROMPT, message, SUBMIT_TOOL,
-        () => { /* streaming progress — UI shows spinner */ },
+        onStreamChunk,
         { maxTokens: 64000 }
       )
     } catch (err) {
