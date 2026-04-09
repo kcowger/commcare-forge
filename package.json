@@ -1,6 +1,6 @@
 {
   "name": "commcare-forge",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "AI-powered desktop app for generating CommCare applications from natural language or uploaded documents",
   "type": "module",
   "main": "out/main/main.js",
