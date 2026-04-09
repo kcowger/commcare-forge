@@ -40,7 +40,7 @@ export default function Header({ onOpenSettings, onNewChat, showNewChat, hqDomai
   }
 
   return (
-    <header className="flex items-center justify-between px-6 py-3 border-b border-white/10 bg-[#0a0a0a]/80 backdrop-blur-sm" style={{ WebkitAppRegion: 'drag' } as any}>
+    <header className="flex items-center justify-between px-6 py-3 border-b border-white/10 bg-[#121218]/80 backdrop-blur-sm" style={{ WebkitAppRegion: 'drag' } as any}>
       <div className="flex items-center gap-3">
         <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">

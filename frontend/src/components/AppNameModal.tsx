@@ -35,7 +35,7 @@ export default function AppNameModal({ isOpen, defaultName, onConfirm, onCancel 
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
       <form
         onSubmit={handleSubmit}
-        className="bg-[#141414] border border-white/10 rounded-2xl p-6 w-full max-w-md shadow-2xl"
+        className="bg-surface-raised border border-white/10 rounded-2xl p-6 w-full max-w-md shadow-2xl"
       >
         <h2 className="text-lg font-semibold text-white mb-1">Name your app</h2>
         <p className="text-sm text-white/50 mb-4">This name will be used for exported files.</p>

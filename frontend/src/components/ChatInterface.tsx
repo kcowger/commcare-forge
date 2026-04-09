@@ -174,7 +174,7 @@ export default function ChatInterface({ messages, isLoading, onSendMessage, onUp
       </div>
 
       {/* Input area */}
-      <div className="border-t border-white/10 bg-[#0a0a0a]/80 backdrop-blur-sm px-6 py-4">
+      <div className="border-t border-white/10 bg-surface/80 backdrop-blur-sm px-6 py-4">
         <div className="max-w-3xl mx-auto">
           {/* Attachments preview */}
           {attachments.length > 0 && (

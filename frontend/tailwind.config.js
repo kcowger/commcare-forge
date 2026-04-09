@@ -13,25 +13,51 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif']
+        sans: ['Nunito Sans', 'system-ui', '-apple-system', 'sans-serif']
       },
       colors: {
+        // CommCare HQ styleguide action colors
         primary: {
-          50: '#e8e8f0',
-          100: '#c5c5db',
-          200: '#9e9ec5',
-          300: '#7777af',
-          400: '#59599e',
-          500: '#3b3b8d',
-          600: '#2d2d6e',
-          700: '#1a1a2e',
-          800: '#121225',
-          900: '#0a0a1a'
+          DEFAULT: '#5D70D2',
+          light: '#7B8ADE',
+          dark: '#4A5BBF',
+          subtle: '#DFE2F6'
         },
+        info: {
+          DEFAULT: '#01A2A9',
+          light: '#33B5BB',
+          dark: '#018A90',
+          subtle: '#CCECEE'
+        },
+        success: {
+          DEFAULT: '#358623',
+          light: '#4A9E36',
+          dark: '#2A6D1B',
+          subtle: '#D9ECD4'
+        },
+        warning: {
+          DEFAULT: '#EEAE00',
+          light: '#F5C133',
+          dark: '#CC9500',
+          subtle: '#FCEFCC'
+        },
+        danger: {
+          DEFAULT: '#E13019',
+          light: '#E85A47',
+          dark: '#C42812',
+          subtle: '#FAD8D4'
+        },
+        // Dark surface system (purple-tinted to align with HQ primary)
+        surface: {
+          DEFAULT: '#121218',
+          raised: '#1a1a24',
+          overlay: '#22222e'
+        },
+        // Backward-compat alias — accent maps to primary
         accent: {
-          DEFAULT: '#10b981',
-          light: '#34d399',
-          dark: '#059669'
+          DEFAULT: '#5D70D2',
+          light: '#7B8ADE',
+          dark: '#4A5BBF'
         }
       }
     }

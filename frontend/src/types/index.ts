@@ -56,10 +56,11 @@ export interface GenerationResult {
 }
 
 export interface HqImportResult {
-  importUrl: string
-  fakeAppUrl: string
-  filePath: string
-  instructions: string
+  success: boolean
+  appId: string
+  appUrl: string
+  appName: string
+  warnings?: string[]
 }
 
 export interface CczParseResult {
@@ -98,6 +99,7 @@ export interface ElectronAPI {
   downloadJson: (sourcePath: string) => Promise<string | null>
   openFileLocation: (path: string) => Promise<void>
   initiateHqImport: (cczPath: string) => Promise<HqImportResult>
+  openUrl: (url: string) => Promise<void>
   uploadAndValidate: () => Promise<GenerationResult | null>
   uploadAndParse: () => Promise<CczParseResult | null>
   validateUploaded: (filePath: string) => Promise<GenerationResult>

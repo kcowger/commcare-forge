@@ -55,6 +55,8 @@ export default function App() {
   const [generationProgress, setGenerationProgress] = useState<GenerationProgress | null>(null)
   const [generationResult, setGenerationResult] = useState<GenerationResult | null>(null)
   const [hqImportResult, setHqImportResult] = useState<HqImportResult | null>(null)
+  const [uploadingToHq, setUploadingToHq] = useState(false)
+  const [hqUploadError, setHqUploadError] = useState<string | null>(null)
 
   // Live upload state (active conversation)
   const [panelMode, setPanelMode] = useState<PanelMode>('chat')
@@ -125,7 +127,7 @@ export default function App() {
           setUploadedAppName(active.uploadedAppName)
           setGenerationProgress(active.generationProgress)
           setGenerationResult(active.generationResult)
-          setHqImportResult(active.hqImportResult)
+          setHqImportResult(active.hqImportResult?.appId ? active.hqImportResult : null)
         } else {
           const fresh = createEmptyConversation()
           setConversations([fresh])
@@ -239,7 +241,9 @@ export default function App() {
     setUploadedAppName(conv.uploadedAppName)
     setGenerationProgress(conv.generationProgress)
     setGenerationResult(conv.generationResult)
-    setHqImportResult(conv.hqImportResult)
+    setHqImportResult(conv.hqImportResult?.appId ? conv.hqImportResult : null)
+    setHqUploadError(null)
+    setUploadingToHq(false)
     setIsGenerating(false)
     setNameModalOpen(false)
   }, [restoreState])
@@ -457,21 +461,36 @@ ${JSON.stringify(result.hqJson, null, 2)}
     await window.electronAPI.openFileLocation(generationResult.cczPath)
   }, [generationResult])
 
-  const handleImportToHq = useCallback(async () => {
+  const uploadInProgress = useRef(false)
+  const handleUploadToHq = useCallback(async () => {
     const importPath = generationResult?.hqJsonPath || generationResult?.cczPath
-    if (!window.electronAPI || !importPath) return
+    if (!window.electronAPI || !importPath || uploadInProgress.current) return
+    uploadInProgress.current = true
+    setUploadingToHq(true)
+    setHqUploadError(null)
+    setHqImportResult(null)
     try {
       const result = await window.electronAPI.initiateHqImport(importPath)
       setHqImportResult(result)
     } catch (error: any) {
-      alert(error.message || 'Failed to initiate HQ import')
+      setHqUploadError(error.message || 'Failed to upload to CommCare HQ')
+    } finally {
+      setUploadingToHq(false)
+      uploadInProgress.current = false
     }
   }, [generationResult])
+
+  const handleOpenInHq = useCallback(async () => {
+    if (!window.electronAPI || !hqImportResult?.appUrl) return
+    await window.electronAPI.openUrl(hqImportResult.appUrl)
+  }, [hqImportResult])
 
   const handleSendMessage = useCallback(async (content: string, attachments?: FileAttachment[]) => {
     if (generationResult) {
       setGenerationResult(null)
       setGenerationProgress(null)
+      setHqImportResult(null)
+      setHqUploadError(null)
     }
     return sendMessage(content, attachments)
   }, [sendMessage, generationResult])
@@ -493,7 +512,7 @@ ${JSON.stringify(result.hqJson, null, 2)}
 
   if (apiKeyReady === null) {
     // Still checking
-    return <div className="h-screen bg-[#0a0a0a]" />
+    return <div className="h-screen bg-surface" />
   }
 
   if (apiKeyReady === false) {
@@ -510,7 +529,7 @@ ${JSON.stringify(result.hqJson, null, 2)}
   // --- Main app ---
 
   return (
-    <div className="h-screen flex flex-col bg-[#0a0a0a] text-white">
+    <div className="h-screen flex flex-col bg-surface text-white">
       {/* Auto-update banner */}
       {updateAvailable && !updateDismissed && (
         <div className="flex items-center justify-between px-4 py-2 bg-accent/10 border-b border-accent/20 text-sm">
@@ -537,7 +556,7 @@ ${JSON.stringify(result.hqJson, null, 2)}
               </>
             ) : updateError ? (
               <>
-                <span className="text-red-400/80">Update failed: {updateError.substring(0, 100)}</span>
+                <span className="text-danger/80">Update failed: {updateError.substring(0, 100)}</span>
                 <button
                   onClick={() => {
                     setUpdateError(null)
@@ -627,7 +646,7 @@ ${JSON.stringify(result.hqJson, null, 2)}
 
           {/* Generation controls - pinned above chat input */}
           {(isGenerating || generationResult) && (
-            <div className="border-t border-white/10 bg-[#0a0a0a] px-6 py-3">
+            <div className="border-t border-white/10 bg-surface px-6 py-3">
               <div className="max-w-3xl mx-auto space-y-3">
                 {generationProgress && (isGenerating || generationProgress.status === 'success' || generationProgress.status === 'failed') && (
                   <ProgressTracker {...generationProgress} />
@@ -636,43 +655,123 @@ ${JSON.stringify(result.hqJson, null, 2)}
                 {generationResult?.success && (generationResult.cczPath || generationResult.hqJsonPath) && (
                   <div className="rounded-xl border border-accent/20 bg-accent/5 px-4 py-3 space-y-3">
                     <p className="text-sm text-white/70">App generated successfully!</p>
-                    <div className="flex flex-wrap gap-2">
+
+                    {/* Primary action: Upload to HQ */}
+                    {(generationResult.hqJsonPath || generationResult.cczPath) && (
+                      <div>
+                        {/* Upload button — idle state */}
+                        {!hqImportResult && !uploadingToHq && !hqUploadError && (
+                          <button
+                            onClick={handleUploadToHq}
+                            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-info hover:bg-info-light text-white text-sm font-semibold transition-colors"
+                          >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
+                            Upload to CommCare HQ
+                          </button>
+                        )}
+
+                        {/* Upload button — uploading state */}
+                        {uploadingToHq && (
+                          <div className="w-full flex items-center justify-center gap-2.5 px-4 py-2.5 rounded-lg bg-info/20 border border-info/30">
+                            <svg width="16" height="16" viewBox="0 0 24 24" className="animate-spin text-info shrink-0">
+                              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" fill="none" opacity="0.25" />
+                              <path d="M12 2a10 10 0 019.95 9" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" />
+                            </svg>
+                            <span className="text-sm font-medium text-info animate-pulse">Uploading to CommCare HQ...</span>
+                          </div>
+                        )}
+
+                        {/* Upload — success state */}
+                        {hqImportResult && (
+                          <div className="rounded-lg border border-success/30 bg-success/10 overflow-hidden">
+                            <div className="flex items-start gap-3 px-4 py-3">
+                              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-success shrink-0 mt-0.5">
+                                <path d="M22 11.08V12a10 10 0 11-5.93-9.14" />
+                                <polyline points="22 4 12 14.01 9 11.01" />
+                              </svg>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-semibold text-success">Live on CommCare HQ</p>
+                                <p className="text-xs text-white/50 mt-0.5 truncate">
+                                  <span className="text-white/70">{hqImportResult.appName}</span> is now in your project space
+                                </p>
+                                {hqImportResult.warnings && hqImportResult.warnings.length > 0 && (
+                                  <div className="mt-2 space-y-0.5">
+                                    {hqImportResult.warnings.map((w, i) => (
+                                      <p key={i} className="text-xs text-warning/70">{w}</p>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                              <button
+                                onClick={handleOpenInHq}
+                                className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-success hover:bg-success-light text-white text-xs font-medium transition-colors"
+                              >
+                                Open in HQ
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></svg>
+                              </button>
+                            </div>
+                            <button
+                              onClick={() => { setHqImportResult(null); setHqUploadError(null) }}
+                              className="w-full px-4 py-1.5 text-xs text-white/30 hover:text-white/50 hover:bg-white/[0.03] border-t border-white/5 transition-colors"
+                            >
+                              Upload again
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Upload — error state */}
+                        {hqUploadError && !uploadingToHq && (
+                          <div className="rounded-lg border border-danger/30 bg-danger/5 px-4 py-3">
+                            <div className="flex items-start gap-2.5">
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-danger shrink-0 mt-0.5">
+                                <circle cx="12" cy="12" r="10" />
+                                <line x1="15" y1="9" x2="9" y2="15" />
+                                <line x1="9" y1="9" x2="15" y2="15" />
+                              </svg>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm text-danger font-medium">Upload failed</p>
+                                <p className="text-xs text-white/50 mt-0.5">{hqUploadError}</p>
+                                <p className="text-xs text-white/30 mt-1">Check your credentials and project space in Settings, then try again.</p>
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => { setHqUploadError(null) }}
+                              className="mt-2.5 w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md bg-white/5 hover:bg-white/10 border border-white/10 text-white/60 text-xs font-medium transition-colors"
+                            >
+                              Try again
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Secondary actions: downloads */}
+                    <div className="flex items-center gap-3 pt-1 border-t border-white/5">
                       {generationResult.cczPath && (
-                        <button onClick={handleDownloadCcz} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent hover:bg-accent-light text-white text-sm font-medium transition-colors">
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-                          Download .ccz
+                        <button onClick={handleDownloadCcz} className="flex items-center gap-1.5 text-xs text-white/40 hover:text-white/70 transition-colors">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+                          .ccz
                         </button>
                       )}
                       {generationResult.hqJsonPath && (
-                        <button onClick={handleDownloadJson} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent hover:bg-accent-light text-white text-sm font-medium transition-colors">
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-                          Download .json
+                        <button onClick={handleDownloadJson} className="flex items-center gap-1.5 text-xs text-white/40 hover:text-white/70 transition-colors">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+                          .json
                         </button>
                       )}
                       {generationResult.cczPath && (
-                        <button onClick={handleOpenFileLocation} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 text-sm transition-colors">
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z" /></svg>
-                          Open in Explorer
-                        </button>
-                      )}
-                      {(generationResult.hqJsonPath || generationResult.cczPath) && (
-                        <button onClick={handleImportToHq} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 text-sm transition-colors">
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></svg>
-                          Import to HQ
+                        <button onClick={handleOpenFileLocation} className="flex items-center gap-1.5 text-xs text-white/40 hover:text-white/70 transition-colors">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z" /></svg>
+                          Open folder
                         </button>
                       )}
                     </div>
-                    {hqImportResult && (
-                      <div className="rounded-lg bg-white/5 border border-white/10 px-3 py-2.5 text-xs text-white/60 whitespace-pre-wrap leading-relaxed">
-                        {hqImportResult.instructions}
-                      </div>
-                    )}
                   </div>
                 )}
 
                 {generationResult && !generationResult.success && generationResult.errors && (
-                  <div className="rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3">
-                    <p className="text-sm text-red-400 font-medium mb-1">
+                  <div className="rounded-xl border border-danger/20 bg-danger/5 px-4 py-3">
+                    <p className="text-sm text-danger font-medium mb-1">
                       Generation failed after {generationResult.errors.length > 0 ? 'validation' : 'build'}:
                     </p>
                     <div className="text-xs text-white/60 space-y-1 mt-2 max-h-40 overflow-y-auto">

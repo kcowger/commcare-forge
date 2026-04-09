@@ -129,7 +129,7 @@ export default function HqImportModal({ isOpen, onClose, onImport }: HqImportMod
                 />
               </div>
             </div>
-            {error && <p className="text-xs text-red-400 mt-3">{error}</p>}
+            {error && <p className="text-xs text-danger mt-3">{error}</p>}
             <div className="flex justify-end gap-3 mt-5">
               <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg text-sm text-white/60 hover:text-white/90 hover:bg-white/5 transition-colors">
                 Cancel
@@ -168,7 +168,7 @@ export default function HqImportModal({ isOpen, onClose, onImport }: HqImportMod
                   />
                 )}
 
-                {error && <p className="text-xs text-red-400 mb-3">{error}</p>}
+                {error && <p className="text-xs text-danger mb-3">{error}</p>}
 
                 {filtered.length === 0 ? (
                   <p className="text-sm text-white/40 py-8 text-center">

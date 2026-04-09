@@ -15,6 +15,14 @@ export interface HqFetchResult {
   hqJson: Record<string, any>
 }
 
+export interface HqImportAppResult {
+  success: boolean
+  appId: string
+  appUrl: string
+  appName: string
+  warnings?: string[]
+}
+
 export class HqApiClient {
   private baseUrl: string
   private authHeader: string
@@ -58,6 +66,124 @@ export class HqApiClient {
     return { appName, appId, markdownSummary, hqJson }
   }
 
+  async importApp(appName: string, hqJsonContent: Buffer | string): Promise<HqImportAppResult> {
+    const url = `${this.baseUrl}/apps/api/import_app/`
+
+    // Step 1: GET login page to obtain a CSRF cookie
+    const csrfToken = await this.fetchCsrfToken(url)
+    if (!csrfToken) {
+      throw new Error('Could not obtain CSRF token from CommCare HQ. The server may be unreachable.')
+    }
+
+    const fileBuffer = Buffer.isBuffer(hqJsonContent) ? hqJsonContent : Buffer.from(hqJsonContent, 'utf-8')
+    // Sanitize filename to prevent path traversal or injection in multipart metadata
+    const safeFileName = appName.replace(/[^a-zA-Z0-9-_ ]/g, '').trim().substring(0, 100) || 'app'
+    const formData = new FormData()
+    formData.append('app_name', appName)
+    formData.append('app_file', new Blob([fileBuffer], { type: 'application/json' }), `${safeFileName}.json`)
+
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 60000) // 60s for uploads
+
+    try {
+      const headers: Record<string, string> = {
+        'Authorization': this.authHeader,
+        'X-Requested-With': 'XMLHttpRequest',
+        'Referer': url
+      }
+      if (csrfToken) {
+        headers['X-CSRFToken'] = csrfToken
+        headers['Cookie'] = `csrftoken=${csrfToken}`
+      }
+
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: formData,
+        signal: controller.signal,
+        redirect: 'follow' // Allow redirects — proxy may require it
+      })
+
+      // Treat redirects as an error — auth'd POSTs should never redirect
+      if (resp.status >= 300 && resp.status < 400) {
+        const location = resp.headers.get('location') || 'unknown'
+        throw new Error(`Server redirected to ${location.substring(0, 100)}. Check your CommCare HQ server URL in Settings.`)
+      }
+      if (resp.status === 401) {
+        throw new Error('Authentication failed (401). Check your HQ username and API key in Settings.')
+      }
+      if (resp.status === 403) {
+        throw new Error('Permission denied (403). Your HQ account may not have "Edit Apps" permission for this project space.')
+      }
+      if (resp.status === 404) {
+        throw new Error('App import API not found (404). This feature may not be deployed to your CommCare HQ server yet.')
+      }
+
+      // Try to parse JSON response for non-OK statuses
+      let data: any
+      try {
+        data = await resp.json()
+      } catch {
+        if (!resp.ok) {
+          throw new Error(`CommCare HQ returned status ${resp.status}. The server may be having issues.`)
+        }
+        throw new Error('Invalid response from CommCare HQ.')
+      }
+
+      if (!resp.ok) {
+        // Sanitize server-controlled error messages before displaying to user
+        const serverMsg = typeof data.error === 'string'
+          ? data.error.replace(/[\x00-\x1f]/g, '').substring(0, 300)
+          : ''
+        throw new Error(serverMsg || `Upload failed (status ${resp.status}).`)
+      }
+
+      // Validate app_id is a safe hex string before constructing URL
+      const appId = data.app_id
+      if (typeof appId !== 'string' || !/^[a-f0-9]+$/i.test(appId)) {
+        throw new Error('Invalid app ID returned from server.')
+      }
+      const appUrl = `https://${this.server}/a/${this.domain}/apps/view/${appId}/`
+
+      return {
+        success: true,
+        appId,
+        appUrl,
+        appName,
+        warnings: Array.isArray(data.warnings)
+          ? data.warnings.filter((w: unknown) => typeof w === 'string').map((w: string) => w.substring(0, 500))
+          : undefined
+      }
+    } catch (err: any) {
+      this.handleFetchError(err)
+    } finally {
+      clearTimeout(timeout)
+    }
+  }
+
+  private async fetchCsrfToken(_url: string): Promise<string | null> {
+    try {
+      // Hit the login page to get a CSRF cookie — the import endpoint itself is POST-only
+      const resp = await fetch(`https://${this.server}/accounts/login/`, {
+        method: 'GET',
+        redirect: 'follow'
+      })
+      // Extract csrftoken from Set-Cookie header
+      const cookies = resp.headers.getSetCookie?.() || []
+      for (const cookie of cookies) {
+        const match = cookie.match(/csrftoken=([^;]+)/)
+        if (match) return match[1]
+      }
+      // Fallback: try raw set-cookie header
+      const rawCookie = resp.headers.get('set-cookie') || ''
+      const match = rawCookie.match(/csrftoken=([^;]+)/)
+      if (match) return match[1]
+      return null
+    } catch {
+      return null
+    }
+  }
+
   private async fetchWithTimeout(url: string): Promise<Response> {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 30000)
@@ -69,9 +195,12 @@ export class HqApiClient {
           'Accept': 'application/json'
         },
         signal: controller.signal,
-        redirect: 'follow'
+        redirect: 'manual' // Don't follow redirects — prevents leaking auth header
       })
 
+      if (resp.status >= 300 && resp.status < 400) {
+        throw new Error('Server redirected unexpectedly. Check your CommCare HQ server URL in Settings.')
+      }
       if (resp.status === 401 || resp.status === 403) {
         throw new Error('Invalid CommCare HQ credentials. Check your username and API key in Settings.')
       }
@@ -90,16 +219,20 @@ export class HqApiClient {
 
       return resp
     } catch (err: any) {
-      if (err.name === 'AbortError') {
-        throw new Error('Request timed out. CommCare HQ may be slow or unreachable.')
-      }
-      if (err.message?.includes('fetch failed') || err.code === 'ENOTFOUND') {
-        throw new Error('Could not connect to CommCare HQ. Check your internet connection and server URL.')
-      }
-      throw err
+      this.handleFetchError(err)
     } finally {
       clearTimeout(timeout)
     }
+  }
+
+  private handleFetchError(err: any): never {
+    if (err.name === 'AbortError') {
+      throw new Error('Request timed out. CommCare HQ may be slow or unreachable.')
+    }
+    if (err.message?.includes('fetch failed') || err.code === 'ENOTFOUND') {
+      throw new Error('Could not connect to CommCare HQ. Check your internet connection and server URL.')
+    }
+    throw err
   }
 }
 

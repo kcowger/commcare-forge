@@ -24,7 +24,7 @@ export default function ArchitecturePanel({ content, isStreaming, canBuild, onBu
   }, [content, isStreaming])
 
   return (
-    <div className="w-[40%] border-l border-white/10 flex flex-col bg-[#0c0c0c] animate-slide-in-right">
+    <div className="w-[40%] border-l border-white/10 flex flex-col bg-surface animate-slide-in-right">
       {/* Header */}
       <div className="flex items-center justify-between px-5 py-3 border-b border-white/10 shrink-0">
         <div className="flex items-center gap-2">

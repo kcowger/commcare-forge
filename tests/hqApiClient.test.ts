@@ -14,6 +14,18 @@ function jsonResponse(data: any, status = 200) {
   })
 }
 
+// CSRF preflight response — importApp GETs /accounts/login/ first
+function csrfResponse() {
+  return Promise.resolve({
+    ok: true,
+    status: 200,
+    headers: {
+      get: (name: string) => name === 'set-cookie' ? 'csrftoken=testtoken123; Path=/' : null,
+      getSetCookie: () => ['csrftoken=testtoken123; Path=/']
+    }
+  })
+}
+
 describe('HqApiClient', () => {
   const client = new HqApiClient('www.commcarehq.org', 'test-domain', 'user@example.com', 'abc123')
 
@@ -142,6 +154,178 @@ describe('HqApiClient', () => {
       }))
 
       await expect(client.listApps()).rejects.toThrow('Not found')
+    })
+
+    it('should reject redirects on GET requests to prevent auth leaking', async () => {
+      mockFetch.mockReturnValueOnce(Promise.resolve({
+        ok: false,
+        status: 301,
+        headers: new Map()
+      }))
+
+      await expect(client.listApps()).rejects.toThrow('Server redirected unexpectedly')
+    })
+  })
+
+  describe('importApp', () => {
+    // importApp makes a CSRF preflight GET before each POST — mock it
+    beforeEach(() => {
+      mockFetch.mockReturnValueOnce(csrfResponse())
+    })
+
+    it('should POST multipart form data and return app URL', async () => {
+      mockFetch.mockReturnValueOnce(Promise.resolve({
+        ok: true,
+        status: 201,
+        headers: new Map([['content-length', '100']]),
+        json: () => Promise.resolve({ success: true, app_id: 'a1b2c3d4e5f6' })
+      }))
+
+      const result = await client.importApp('My App', '{"name":"My App","modules":[]}')
+
+      expect(result.success).toBe(true)
+      expect(result.appId).toBe('a1b2c3d4e5f6')
+      expect(result.appUrl).toBe('https://www.commcarehq.org/a/test-domain/apps/view/a1b2c3d4e5f6/')
+      expect(result.appName).toBe('My App')
+
+      // call[0] is CSRF preflight, call[1] is the actual POST
+      expect(mockFetch).toHaveBeenNthCalledWith(2,
+        'https://www.commcarehq.org/a/test-domain/apps/api/import_app/',
+        expect.objectContaining({
+          method: 'POST',
+          headers: expect.objectContaining({ 'Authorization': 'ApiKey user@example.com:abc123' })
+        })
+      )
+    })
+
+    it('should return warnings when present', async () => {
+      mockFetch.mockReturnValueOnce(Promise.resolve({
+        ok: true,
+        status: 201,
+        headers: new Map(),
+        json: () => Promise.resolve({ success: true, app_id: 'abc', warnings: ['Missing multimedia'] })
+      }))
+
+      const result = await client.importApp('App', '{}')
+      expect(result.warnings).toEqual(['Missing multimedia'])
+    })
+
+    it('should filter non-string warnings and truncate long ones', async () => {
+      mockFetch.mockReturnValueOnce(Promise.resolve({
+        ok: true,
+        status: 201,
+        headers: new Map(),
+        json: () => Promise.resolve({
+          success: true,
+          app_id: 'abc',
+          warnings: ['Valid warning', 123, { obj: true }, 'X'.repeat(600), null]
+        })
+      }))
+
+      const result = await client.importApp('App', '{}')
+      expect(result.warnings).toHaveLength(2)
+      expect(result.warnings![0]).toBe('Valid warning')
+      expect(result.warnings![1]).toHaveLength(500)
+    })
+
+    it('should throw on auth failure', async () => {
+      mockFetch.mockReturnValueOnce(Promise.resolve({
+        ok: false,
+        status: 401,
+        headers: new Map(),
+        json: () => Promise.resolve({ success: false, error: 'Unauthorized' })
+      }))
+
+      await expect(client.importApp('App', '{}')).rejects.toThrow('Authentication failed (401)')
+    })
+
+    it('should throw on 400 with server error message', async () => {
+      mockFetch.mockReturnValueOnce(Promise.resolve({
+        ok: false,
+        status: 400,
+        headers: new Map(),
+        json: () => Promise.resolve({ success: false, error: 'Invalid JSON file' })
+      }))
+
+      await expect(client.importApp('App', '{}')).rejects.toThrow('Invalid JSON file')
+    })
+
+    it('should throw on 404 with API availability message', async () => {
+      mockFetch.mockReturnValueOnce(Promise.resolve({
+        ok: false,
+        status: 404,
+        headers: new Map(),
+        json: () => Promise.resolve({})
+      }))
+
+      await expect(client.importApp('App', '{}')).rejects.toThrow('App import API not found (404)')
+    })
+
+    it('should reject invalid app_id in response (path traversal prevention)', async () => {
+      mockFetch.mockReturnValueOnce(Promise.resolve({
+        ok: true,
+        status: 201,
+        headers: new Map(),
+        json: () => Promise.resolve({ success: true, app_id: '../../admin' })
+      }))
+
+      await expect(client.importApp('App', '{}')).rejects.toThrow('Invalid app ID returned from server')
+    })
+
+    it('should sanitize filename from app name with special characters', async () => {
+      mockFetch.mockReturnValueOnce(Promise.resolve({
+        ok: true,
+        status: 201,
+        headers: new Map(),
+        json: () => Promise.resolve({ success: true, app_id: 'abc123' })
+      }))
+
+      await client.importApp('My ../App! (v2)', '{}')
+
+      // call[0] is CSRF preflight, call[1] is the POST
+      const callArgs = mockFetch.mock.calls[1]
+      const body = callArgs[1].body as FormData
+      const file = body.get('app_file') as File
+      // Filename should be sanitized — no special chars
+      expect(file.name).toBe('My App v2.json')
+    })
+
+    it('should send CSRF token and cookie in POST headers', async () => {
+      mockFetch.mockReturnValueOnce(Promise.resolve({
+        ok: true,
+        status: 201,
+        headers: new Map(),
+        json: () => Promise.resolve({ success: true, app_id: 'abc123' })
+      }))
+
+      await client.importApp('App', '{}')
+
+      // call[1] is the POST (call[0] is CSRF preflight)
+      expect(mockFetch).toHaveBeenNthCalledWith(2,
+        expect.any(String),
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            'X-CSRFToken': 'testtoken123',
+            'Cookie': 'csrftoken=testtoken123'
+          })
+        })
+      )
+    })
+
+    it('should truncate and sanitize server error messages', async () => {
+      const longError = 'A'.repeat(500)
+      mockFetch.mockReturnValueOnce(Promise.resolve({
+        ok: false,
+        status: 400,
+        headers: new Map(),
+        json: () => Promise.resolve({ success: false, error: longError })
+      }))
+
+      await expect(client.importApp('App', '{}')).rejects.toThrow(
+        expect.objectContaining({
+          message: expect.stringMatching(/^A{300}$/)
+        })
+      )
     })
   })
 

@@ -34,8 +34,8 @@ export default function SettingsModal({ isOpen, onClose, onSettingsChanged }: Se
         setHqDomain(settings.hqDomain || '')
         setModel(settings.model || 'claude-sonnet-4-5-20250929')
         setHasHqCreds(settings.hasHqCredentials || false)
-        setHqUsername(settings.hasHqCredentials ? (settings.hqUsername || '••••••••') : '')
-        setHqApiKey(settings.hasHqCredentials ? '••••••••••••••••••••' : '')
+        setHqUsername('')
+        setHqApiKey('')
       })
     }
   }, [isOpen])
@@ -58,11 +58,9 @@ export default function SettingsModal({ isOpen, onClose, onSettingsChanged }: Se
       if (apiKey && !apiKey.startsWith('••')) {
         await window.electronAPI.setApiKey(apiKey)
       }
-      // Save HQ credentials if user entered new values
-      const usernameChanged = hqUsername && !hqUsername.startsWith('••')
-      const apiKeyChanged = hqApiKey && !hqApiKey.startsWith('••')
-      if (usernameChanged && apiKeyChanged) {
-        await window.electronAPI.setHqCredentials(hqUsername, hqApiKey)
+      // Save HQ credentials if user entered both values
+      if (hqUsername.trim() && hqApiKey.trim()) {
+        await window.electronAPI.setHqCredentials(hqUsername.trim(), hqApiKey.trim())
       }
       onSettingsChanged?.()
       onClose()
@@ -138,8 +136,7 @@ export default function SettingsModal({ isOpen, onClose, onSettingsChanged }: Se
               type="text"
               value={hqUsername}
               onChange={e => setHqUsername(e.target.value)}
-              onFocus={() => { if (hqUsername.startsWith('••')) setHqUsername('') }}
-              placeholder="user@example.com"
+              placeholder={hasHqCreds ? 'Saved — enter new value to change' : 'user@example.com'}
               autoComplete="off"
               className="w-full rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-sm text-white placeholder-white/20 focus:outline-none focus:border-accent/50"
             />
@@ -150,8 +147,7 @@ export default function SettingsModal({ isOpen, onClose, onSettingsChanged }: Se
               type="password"
               value={hqApiKey}
               onChange={e => setHqApiKey(e.target.value)}
-              onFocus={() => { if (hqApiKey.startsWith('••')) setHqApiKey('') }}
-              placeholder="Your HQ API key"
+              placeholder={hasHqCreds ? 'Saved — enter new value to change' : 'Your HQ API key'}
               autoComplete="off"
               className="w-full rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-sm text-white placeholder-white/20 focus:outline-none focus:border-accent/50"
             />

@@ -36,7 +36,7 @@ export default function TabBar({ conversations, activeId, onSwitch, onClose, onN
   }
 
   return (
-    <div className="flex items-center border-b border-white/10 bg-[#0a0a0a] overflow-x-auto scrollbar-hide">
+    <div className="flex items-center border-b border-white/10 bg-surface overflow-x-auto scrollbar-hide">
       <div className="flex items-center min-w-0">
         {conversations.map(conv => (
           <button

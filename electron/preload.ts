@@ -57,10 +57,11 @@ export interface GenerationResult {
 }
 
 export interface HqImportResult {
-  importUrl: string
-  fakeAppUrl: string
-  filePath: string
-  instructions: string
+  success: boolean
+  appId: string
+  appUrl: string
+  appName: string
+  warnings?: string[]
 }
 
 export interface CczParseResult {
@@ -83,6 +84,7 @@ export type ElectronAPI = {
   downloadCcz: (sourcePath: string) => Promise<string | null>
   openFileLocation: (path: string) => Promise<void>
   initiateHqImport: (cczPath: string) => Promise<HqImportResult>
+  openUrl: (url: string) => Promise<void>
   uploadAndValidate: () => Promise<GenerationResult | null>
   uploadAndParse: () => Promise<CczParseResult | null>
   validateUploaded: (filePath: string) => Promise<GenerationResult>
@@ -152,6 +154,9 @@ const api: ElectronAPI = {
   },
   initiateHqImport: (cczPath: string) => {
     return ipcRenderer.invoke('hq:initiate-import', cczPath)
+  },
+  openUrl: (url: string) => {
+    return ipcRenderer.invoke('hq:open-url', url)
   },
   uploadAndValidate: () => {
     return ipcRenderer.invoke('app:upload-and-validate')

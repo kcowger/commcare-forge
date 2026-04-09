@@ -41,7 +41,7 @@ export default function WelcomeScreen({ onComplete }: WelcomeScreenProps) {
   }
 
   return (
-    <div className="h-screen flex items-center justify-center bg-[#0a0a0a]" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
+    <div className="h-screen flex items-center justify-center bg-surface" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
       <div className="w-full max-w-sm px-6" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
         {/* App icon */}
         <div className="flex justify-center mb-6">
@@ -66,7 +66,7 @@ export default function WelcomeScreen({ onComplete }: WelcomeScreenProps) {
         {/* Setup form */}
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
-            <label className="block text-xs font-medium text-white/60 mb-1">Anthropic API Key <span className="text-red-400">*</span></label>
+            <label className="block text-xs font-medium text-white/60 mb-1">Anthropic API Key <span className="text-danger">*</span></label>
             <input
               type="password"
               value={apiKey}
@@ -120,7 +120,7 @@ export default function WelcomeScreen({ onComplete }: WelcomeScreenProps) {
           </div>
 
           {error && (
-            <p className="text-xs text-red-400">{error}</p>
+            <p className="text-xs text-danger">{error}</p>
           )}
 
           <button

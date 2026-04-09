@@ -5,7 +5,6 @@ import { ClaudeService } from '@backend/services/claude'
 import { AppGenerator } from '@backend/services/appGenerator'
 import { CliValidator, checkJavaAvailable } from '@backend/services/cliValidator'
 import { AppExporter } from '@backend/services/appExporter'
-import { HqImportService } from '@backend/services/hqImport'
 import { HqValidator } from '@backend/services/hqValidator'
 import { CczParser } from '@backend/services/cczParser'
 import { AutoFixer } from '@backend/services/autoFixer'
@@ -158,6 +157,13 @@ function validateHqServer(server: string): void {
 function validateHqDomain(domain: string): void {
   if (domain && !/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(domain)) {
     throw new Error('Invalid project space domain')
+  }
+}
+
+// Validate HQ credentials are printable ASCII (required for HTTP Authorization header)
+function validateHqCredentials(creds: { username: string; apiKey: string }): void {
+  if (/[^\x20-\x7e]/.test(creds.username) || /[^\x20-\x7e]/.test(creds.apiKey)) {
+    throw new Error('Stored HQ credentials appear corrupted. Please re-enter your username and API key in Settings.')
   }
 }
 
@@ -337,19 +343,50 @@ export function registerIpcHandlers(ipcMain: IpcMain) {
   })
 
   ipcMain.handle('hq:initiate-import', async (_event, jsonPath: string) => {
-    validateFilePath(jsonPath)
-    const hqServer = store.get('hqServer') || 'www.commcarehq.org'
-    const hqDomain = store.get('hqDomain')
+    try {
+      validateFilePath(jsonPath)
+      checkFileSize(jsonPath)
 
-    if (!hqDomain) {
-      throw new Error('Please set your CommCare HQ project space domain in Settings first.')
+      const hqServer = store.get('hqServer') || 'www.commcarehq.org'
+      const hqDomain = store.get('hqDomain')
+
+      if (!hqDomain) {
+        throw new Error('Please set your CommCare HQ project space domain in Settings first.')
+      }
+
+      validateHqServer(hqServer)
+      validateHqDomain(hqDomain)
+
+      const creds = getSecureHqCredentials()
+      if (!creds) {
+        throw new Error('CommCare HQ credentials not configured. Add your username and API key in Settings.')
+      }
+
+      validateHqCredentials(creds)
+
+      const fileBuffer = fs.readFileSync(jsonPath)
+      const hqJson = JSON.parse(fileBuffer.toString('utf-8'))
+      const rawName = hqJson.name
+      const appName = (typeof rawName === 'string' ? rawName.substring(0, 200) : '') || 'CommCare Forge App'
+
+      const client = new HqApiClient(hqServer, hqDomain, creds.username, creds.apiKey)
+      return await client.importApp(appName, fileBuffer)
+    } catch (error: any) {
+      throw new Error(sanitizeError(error.message || 'Failed to upload to CommCare HQ'))
     }
+  })
 
-    validateHqServer(hqServer)
-    validateHqDomain(hqDomain)
-
-    const hqImport = new HqImportService()
-    return await hqImport.initiateImport(hqServer, hqDomain, jsonPath)
+  ipcMain.handle('hq:open-url', async (_event, url: string) => {
+    if (typeof url !== 'string') {
+      throw new Error('Invalid URL')
+    }
+    // Only allow opening URLs on the user's configured HQ server — prevent open redirect
+    const hqServer = store.get('hqServer') || 'www.commcarehq.org'
+    const allowedPrefix = `https://${hqServer}/a/`
+    if (!url.startsWith(allowedPrefix)) {
+      throw new Error('URL does not match configured CommCare HQ server')
+    }
+    await shell.openExternal(url)
   })
 
   ipcMain.handle('app:upload-and-parse', async (event) => {
@@ -610,6 +647,7 @@ export function registerIpcHandlers(ipcMain: IpcMain) {
 
     const creds = getSecureHqCredentials()
     if (!creds) throw new Error('CommCare HQ API credentials not configured. Set them in Settings.')
+    validateHqCredentials(creds)
 
     const client = new HqApiClient(hqServer, hqDomain, creds.username, creds.apiKey)
     return await client.listApps()
@@ -629,6 +667,7 @@ export function registerIpcHandlers(ipcMain: IpcMain) {
 
     const creds = getSecureHqCredentials()
     if (!creds) throw new Error('CommCare HQ API credentials not configured.')
+    validateHqCredentials(creds)
 
     const client = new HqApiClient(hqServer, hqDomain, creds.username, creds.apiKey)
     return await client.getApp(appId)
