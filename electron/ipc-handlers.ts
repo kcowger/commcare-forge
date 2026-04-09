@@ -679,7 +679,8 @@ export function registerIpcHandlers(ipcMain: IpcMain) {
   })
 
   ipcMain.handle('update:install', () => {
-    autoUpdater.quitAndInstall()
+    // Force quit and install — isSilent=false (show installer), isForceRunAfter=true (relaunch)
+    setImmediate(() => autoUpdater.quitAndInstall(false, true))
   })
 
   // Conversation persistence handlers
