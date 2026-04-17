@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { PDFDocument } from 'pdf-lib'
 import mammoth from 'mammoth'
-import * as XLSX from 'xlsx'
+import ExcelJS from 'exceljs'
 import { SYSTEM_PROMPT } from '../prompts/system'
 import type { FileAttachment, ConversationMessage } from '../types'
 
@@ -247,11 +247,25 @@ export class ClaudeService {
       } else if (attachment.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || attachment.name.endsWith('.xlsx')) {
         try {
           const buffer = Buffer.from(attachment.data, 'base64')
-          const workbook = XLSX.read(buffer, { type: 'buffer' })
+          const workbook = new ExcelJS.Workbook()
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          await workbook.xlsx.load(buffer as any)
           const sheets: string[] = []
-          for (const sheetName of workbook.SheetNames) {
-            const csv = XLSX.utils.sheet_to_csv(workbook.Sheets[sheetName])
-            sheets.push(`--- Sheet: ${sheetName} ---\n${csv}`)
+          for (const worksheet of workbook.worksheets) {
+            const rows: string[] = []
+            worksheet.eachRow({ includeEmpty: true }, (row) => {
+              const cells: string[] = []
+              row.eachCell({ includeEmpty: true }, (cell) => {
+                const val = cell.text ?? ''
+                if (val.includes(',') || val.includes('"') || val.includes('\n')) {
+                  cells.push('"' + val.replace(/"/g, '""') + '"')
+                } else {
+                  cells.push(val)
+                }
+              })
+              rows.push(cells.join(','))
+            })
+            sheets.push(`--- Sheet: ${worksheet.name} ---\n${rows.join('\n')}`)
           }
           content.push({
             type: 'text',
